@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Game Roster</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 16px;
+      padding-bottom: 80px;
+      min-height: 100vh;
+      -webkit-tap-highlight-color: transparent;
+    }
+    h1 { font-size: 1.5rem; text-align: center; margin-bottom: 4px; }
+    .subtitle { text-align: center; color: #888; font-size: 0.85rem; margin-bottom: 20px; }
+
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .game-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .game-label { font-weight: 700; font-size: 1.15rem; }
+    .game-meta { color: #666; font-size: 0.85rem; margin-top: 2px; }
+    .spots-badge {
+      font-size: 0.8rem;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .spots-open { background: #e8f5e9; color: #2e7d32; }
+    .spots-full { background: #fff3e0; color: #e65100; }
+
+    .roster { margin-bottom: 8px; }
+    .roster-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      color: #aaa;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .player-row {
+      display: flex;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #f5f5f5;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    .player-row:last-child { border-bottom: none; }
+    .player-row:active { background: #fff0f0; }
+    .player-num {
+      color: #bbb;
+      width: 28px;
+      font-size: 0.8rem;
+      flex-shrink: 0;
+    }
+    .player-name { flex: 1; }
+    .player-x {
+      color: #ddd;
+      font-size: 1.2rem;
+      padding: 0 4px;
+    }
+
+    .waitlist-divider {
+      text-align: center;
+      font-size: 0.7rem;
+      color: #ff9800;
+      padding: 10px 0 6px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .signup-area { margin-top: 12px; }
+    .signup-row { display: flex; gap: 8px; }
+    .signup-row input {
+      flex: 1;
+      padding: 14px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 1.05rem;
+      outline: none;
+      transition: border-color 0.2s;
+      -webkit-appearance: none;
+    }
+    .signup-row input:focus { border-color: #1976d2; }
+    .btn-join {
+      padding: 14px 22px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      background: #1976d2;
+      color: #fff;
+      white-space: nowrap;
+      -webkit-appearance: none;
+    }
+    .btn-join:active { background: #1565c0; }
+    .signup-hint {
+      font-size: 0.75rem;
+      color: #aaa;
+      margin-top: 6px;
+      text-align: center;
+    }
+
+    /* Activity log */
+    .log-section { margin-top: 24px; }
+    .log-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: #999;
+      font-size: 0.8rem;
+      cursor: pointer;
+      width: 100%;
+      padding: 8px;
+    }
+    .log-toggle .arrow {
+      transition: transform 0.2s;
+      display: inline-block;
+    }
+    .log-toggle.open .arrow { transform: rotate(180deg); }
+    .log-list { margin-top: 8px; }
+    .log-entry {
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 0.82rem;
+      color: #666;
+    }
+    .log-entry:last-child { border-bottom: none; }
+    .log-action { color: #333; }
+    .log-time { color: #bbb; font-size: 0.75rem; }
+    .log-more {
+      text-align: center;
+      padding: 10px;
+    }
+    .log-more button {
+      background: none;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 0.8rem;
+      color: #888;
+      cursor: pointer;
+    }
+
+    .empty-state { text-align: center; color: #999; padding: 40px 16px; }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-danger { background: #e53935; color: #fff; font-size: 0.85rem; padding: 8px 14px; border-radius: 8px; border: none; cursor: pointer; }
+    .btn-small { font-size: 0.85rem; padding: 8px 14px; }
+
+    .admin-toggle {
+      text-align: center;
+      margin-top: 12px;
+    }
+    .admin-toggle button {
+      background: none;
+      border: none;
+      color: #ccc;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .admin-panel { margin-top: 16px; }
+    .admin-panel h2 { font-size: 1.1rem; margin-bottom: 12px; }
+    .form-group { margin-bottom: 10px; }
+    .form-group label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 4px; }
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      outline: none;
+      -webkit-appearance: none;
+    }
+    .form-group input:focus { border-color: #1976d2; }
+    .form-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .form-actions .btn { background: #1976d2; color: #fff; }
+    .game-admin-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 10px;
+      justify-content: flex-end;
+    }
+
+    .toast {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: #fff;
+      padding: 14px 20px;
+      border-radius: 12px;
+      font-size: 1.05rem;
+      font-weight: 500;
+      opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 100;
+      pointer-events: none;
+      width: calc(100% - 32px);
+      max-width: 448px;
+      text-align: center;
+      line-height: 1.4;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<h1>Game Roster</h1>
+<p class="subtitle">Type a name, tap "I'm in."</p>
+
+<div id="games-container">
+  <div class="empty-state">Loading...</div>
+</div>
+
+<!-- Activity Log -->
+<div class="log-section">
+  <button class="log-toggle" id="log-toggle" onclick="toggleLog()">
+    <span>Recent activity</span>
+    <span class="arrow">&#9660;</span>
+  </button>
+  <div id="log-container" style="display:none;"></div>
+</div>
+
+<div class="admin-toggle">
+  <button onclick="toggleAdmin()">Admin</button>
+</div>
+
+<div id="admin-panel" class="admin-panel" style="display:none;">
+  <div class="card" id="admin-login">
+    <h2>Admin Access</h2>
+    <div class="form-group">
+      <label>Passphrase</label>
+      <input type="password" id="admin-pass" placeholder="Enter passphrase" onkeydown="if(event.key==='Enter')loginAdmin()">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-small" onclick="loginAdmin()">Enter</button>
+    </div>
+  </div>
+
+  <div id="admin-tools" style="display:none;">
+    <div class="card">
+      <h2>Create Game</h2>
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="game-date">
+      </div>
+      <div class="form-group">
+        <label>Time</label>
+        <input type="time" id="game-time" value="18:15">
+      </div>
+      <div class="form-group">
+        <label>Label</label>
+        <input type="text" id="game-label" placeholder='e.g. "6:15pm Game"'>
+      </div>
+      <div class="form-group">
+        <label>Max Players</label>
+        <input type="number" id="game-max" value="18" min="2" max="50">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-small" onclick="createGame()">Create Game</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Add Admin</h2>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="new-admin-name" placeholder="Admin name">
+      </div>
+      <div class="form-group">
+        <label>Passphrase</label>
+        <input type="text" id="new-admin-pass" placeholder="Their passphrase">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-small" onclick="addAdmin()">Add Admin</button>
+      </div>
+    </div>
+
+    <button class="btn btn-small" style="background:#eee;color:#666;width:100%;margin-top:8px;" onclick="logoutAdmin()">Log out</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const SUPABASE_URL = 'https://yogymlpqgqjqragrxqgf.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvZ3ltbHBxZ3FqcXJhZ3J4cWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyOTg1ODAsImV4cCI6MjA4ODg3NDU4MH0.6D8B_jK-tLi2g32xNTxkJwQGbJLW798ufCt869rPZgw';
+
+let adminPass = null;
+let adminName = null;
+let logExpanded = false;
+
+function headers() {
+  return {
+    'apikey': SUPABASE_KEY,
+    'Authorization': `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=representation'
+  };
+}
+
+async function rpc(fn, params) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST', headers: headers(), body: JSON.stringify(params)
+  });
+  if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed'); }
+  return res.json();
+}
+
+async function query(table, params = '') {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, { headers: headers() });
+  return res.json();
+}
+
+async function insert(table, data) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: 'POST', headers: headers(), body: JSON.stringify(data)
+  });
+  return res;
+}
+
+function toast(msg, ms = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), ms);
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
+}
+
+function formatTime(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function timeAgo(dateStr) {
+  const now = new Date();
+  const d = new Date(dateStr);
+  const mins = Math.floor((now - d) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+function esc(str) {
+  const el = document.createElement('span');
+  el.textContent = str;
+  return el.innerHTML;
+}
+
+function escAttr(str) {
+  return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// Log an activity
+async function logActivity(gameId, action, playerName, actorName, isAdmin) {
+  try {
+    await insert('activity_log', {
+      game_id: gameId,
+      action: action,
+      player_name: playerName || null,
+      actor_name: actorName || null,
+      is_admin: isAdmin || false
+    });
+  } catch (e) {
+    console.error('Failed to log activity', e);
+  }
+}
+
+// Cache game labels for log display
+let gameLabels = {};
+
+async function loadGames() {
+  const container = document.getElementById('games-container');
+
+  try {
+    const games = await query('games', 'order=game_date.asc,game_time.asc');
+    if (!games.length) {
+      container.innerHTML = '<div class="empty-state">No games scheduled yet.</div>';
+      return;
+    }
+
+    // Cache labels
+    for (const g of games) { gameLabels[g.id] = g.label; }
+
+    const gameIds = games.map(g => g.id);
+    const signups = await query('signups', `game_id=in.(${gameIds.join(',')})&order=created_at.asc`);
+
+    const signupsByGame = {};
+    for (const s of signups) {
+      if (!signupsByGame[s.game_id]) signupsByGame[s.game_id] = [];
+      signupsByGame[s.game_id].push(s);
+    }
+
+    let html = '';
+    for (const game of games) {
+      const players = signupsByGame[game.id] || [];
+      const roster = players.slice(0, game.max_players);
+      const waitlist = players.slice(game.max_players);
+      const spotsLeft = Math.max(0, game.max_players - roster.length);
+
+      html += `<div class="card">
+        <div class="game-header">
+          <div>
+            <div class="game-label">${esc(game.label)}</div>
+            <div class="game-meta">${formatDate(game.game_date)} &middot; ${formatTime(game.game_time)}</div>
+          </div>
+          <span class="spots-badge ${spotsLeft > 0 ? 'spots-open' : 'spots-full'}">
+            ${spotsLeft > 0 ? spotsLeft + ' spot' + (spotsLeft !== 1 ? 's' : '') : 'Full'}
+          </span>
+        </div>`;
+
+      if (roster.length) {
+        html += `<div class="roster"><div class="roster-title">Playing (${roster.length}/${game.max_players})</div>`;
+        roster.forEach((p, i) => {
+          html += playerRow(i + 1, p, game.id);
+        });
+        html += `</div>`;
+      }
+
+      if (waitlist.length) {
+        html += `<div class="waitlist-divider">Waitlist</div><div class="roster">`;
+        waitlist.forEach((p, i) => {
+          html += playerRow('W' + (i + 1), p, game.id);
+        });
+        html += `</div>`;
+      }
+
+      html += `<div class="signup-area">
+        <div class="signup-row">
+          <input type="text" id="name-${game.id}" placeholder="Name" maxlength="30" onkeydown="if(event.key==='Enter')signup('${game.id}')">
+          <button class="btn-join" onclick="signup('${game.id}')">I'm in</button>
+        </div>
+        <div class="signup-hint">Enter the name of the person you want to sign up</div>
+      </div>`;
+
+      if (adminPass) {
+        html += `<div class="game-admin-actions">
+          <button class="btn-danger btn-small" onclick="deleteGame('${game.id}')">Delete Game</button>
+        </div>`;
+      }
+
+      html += `</div>`;
+    }
+
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div class="empty-state">Couldn\'t load games. Try refreshing.</div>';
+    console.error(e);
+  }
+}
+
+function playerRow(num, player, gameId) {
+  const safeName = escAttr(player.player_name);
+  return `<div class="player-row" onclick="removePlayer('${gameId}','${safeName}')">
+    <span class="player-num">${num}</span>
+    <span class="player-name">${esc(player.player_name)}</span>
+    <span class="player-x">&times;</span>
+  </div>`;
+}
+
+async function signup(gameId) {
+  const input = document.getElementById(`name-${gameId}`);
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/signups`, {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ game_id: gameId, player_name: name })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      if (err.code === '23505') {
+        toast(`${name} is already signed up! Same name? Add your last initial (e.g. "${name} B.")`, 6000);
+      } else {
+        toast('Error signing up');
+      }
+      return;
+    }
+    await logActivity(gameId, 'signup', name, name, !!adminPass);
+    input.value = '';
+    toast(`${name} is in!`);
+    loadGames();
+  } catch (e) {
+    toast('Error signing up');
+  }
+}
+
+async function removePlayer(gameId, playerName) {
+  let actorName;
+
+  if (adminPass) {
+    // Admin removing — we know who they are
+    actorName = adminName;
+  } else {
+    // Non-admin: ask who is removing
+    actorName = prompt(`Removing ${playerName}.\nEnter your name:`);
+    if (!actorName || !actorName.trim()) return; // cancelled
+    actorName = actorName.trim();
+  }
+
+  if (!confirm(`Remove ${playerName}?`)) return;
+
+  try {
+    if (adminPass) {
+      await rpc('admin_remove_signup', { pass: adminPass, p_game_id: gameId, p_player_name: playerName });
+      await logActivity(gameId, 'admin_remove', playerName, actorName, true);
+    } else {
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/signups?game_id=eq.${gameId}&player_name=eq.${encodeURIComponent(playerName)}`,
+        { method: 'DELETE', headers: headers() }
+      );
+      await logActivity(gameId, 'remove', playerName, actorName, false);
+    }
+    toast(`${playerName} removed`);
+    loadGames();
+  } catch (e) {
+    toast('Error removing');
+  }
+}
+
+// Activity log
+function toggleLog() {
+  const container = document.getElementById('log-container');
+  const btn = document.getElementById('log-toggle');
+  const showing = container.style.display !== 'none';
+
+  if (showing) {
+    container.style.display = 'none';
+    btn.classList.remove('open');
+  } else {
+    container.style.display = 'block';
+    btn.classList.add('open');
+    loadLog(false);
+  }
+}
+
+async function loadLog(full) {
+  const container = document.getElementById('log-container');
+  logExpanded = full;
+
+  try {
+    let params = 'order=created_at.desc';
+    if (full) {
+      // Last 7 days
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      params += `&created_at=gte.${weekAgo}`;
+    } else {
+      params += '&limit=10';
+    }
+
+    const logs = await query('activity_log', params);
+
+    if (!logs.length) {
+      container.innerHTML = '<div class="card"><div class="empty-state" style="padding:16px;">No activity yet.</div></div>';
+      return;
+    }
+
+    let html = '<div class="card"><div class="log-list">';
+    for (const entry of logs) {
+      const label = gameLabels[entry.game_id] || 'a game';
+      let desc = '';
+
+      switch (entry.action) {
+        case 'signup':
+          desc = `<strong>${esc(entry.player_name)}</strong> signed up for ${esc(label)}`;
+          break;
+        case 'remove':
+          desc = `<strong>${esc(entry.actor_name)}</strong> removed <strong>${esc(entry.player_name)}</strong> from ${esc(label)}`;
+          break;
+        case 'admin_remove':
+          desc = `<strong>${esc(entry.actor_name)}</strong> (admin) removed <strong>${esc(entry.player_name)}</strong> from ${esc(label)}`;
+          break;
+        case 'game_created':
+          desc = `<strong>${esc(entry.actor_name)}</strong> created ${esc(label)}`;
+          break;
+        case 'game_deleted':
+          desc = `<strong>${esc(entry.actor_name)}</strong> deleted a game`;
+          break;
+        default:
+          desc = `${esc(entry.action)}`;
+      }
+
+      html += `<div class="log-entry">
+        <span class="log-action">${desc}</span><br>
+        <span class="log-time">${timeAgo(entry.created_at)}</span>
+      </div>`;
+    }
+    html += '</div>';
+
+    if (!full && logs.length >= 10) {
+      html += `<div class="log-more"><button onclick="loadLog(true)">Show full week</button></div>`;
+    }
+
+    html += '</div>';
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div class="card"><div class="empty-state" style="padding:16px;">Couldn\'t load activity.</div></div>';
+  }
+}
+
+// Admin
+function toggleAdmin() {
+  const p = document.getElementById('admin-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+async function loginAdmin(pass, silent) {
+  pass = pass || document.getElementById('admin-pass').value.trim();
+  if (!pass) return;
+  try {
+    const r = await rpc('verify_admin', { pass });
+    if (r && r.length) {
+      adminPass = pass;
+      adminName = r[0].name;
+      localStorage.setItem('frisbee_admin', pass);
+      document.getElementById('admin-login').style.display = 'none';
+      document.getElementById('admin-tools').style.display = 'block';
+      document.getElementById('admin-panel').style.display = 'block';
+      if (!silent) toast(`Hi ${r[0].name}`);
+      loadGames();
+    } else {
+      // Stored passphrase no longer valid
+      localStorage.removeItem('frisbee_admin');
+      if (!silent) toast('Wrong passphrase');
+    }
+  } catch (e) {
+    if (!silent) toast('Wrong passphrase');
+  }
+}
+
+function logoutAdmin() {
+  adminPass = null;
+  adminName = null;
+  localStorage.removeItem('frisbee_admin');
+  document.getElementById('admin-login').style.display = 'block';
+  document.getElementById('admin-tools').style.display = 'none';
+  document.getElementById('admin-pass').value = '';
+  toast('Logged out');
+  loadGames();
+}
+
+async function createGame() {
+  const date = document.getElementById('game-date').value;
+  const time = document.getElementById('game-time').value;
+  const label = document.getElementById('game-label').value.trim();
+  const max = parseInt(document.getElementById('game-max').value);
+  if (!date || !time || !label) { toast('Fill in all fields'); return; }
+
+  try {
+    const gameId = await rpc('create_game', { pass: adminPass, p_date: date, p_time: time, p_label: label, p_max_players: max });
+    await logActivity(gameId, 'game_created', null, adminName, true);
+    toast('Game created!');
+    document.getElementById('game-label').value = '';
+    loadGames();
+  } catch (e) { toast('Error creating game'); }
+}
+
+async function deleteGame(gameId) {
+  if (!confirm('Delete this game and all signups?')) return;
+  try {
+    await logActivity(gameId, 'game_deleted', null, adminName, true);
+    await rpc('delete_game', { pass: adminPass, p_game_id: gameId });
+    toast('Deleted');
+    loadGames();
+  } catch (e) { toast('Error deleting'); }
+}
+
+async function addAdmin() {
+  const name = document.getElementById('new-admin-name').value.trim();
+  const pass = document.getElementById('new-admin-pass').value.trim();
+  if (!name || !pass) { toast('Fill in both fields'); return; }
+  try {
+    await rpc('add_admin', { pass: adminPass, p_name: name, p_passphrase: pass });
+    toast(`${name} added`);
+    document.getElementById('new-admin-name').value = '';
+    document.getElementById('new-admin-pass').value = '';
+  } catch (e) { toast('Error adding admin'); }
+}
+
+// Default date
+const dateInput = document.getElementById('game-date');
+if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
+
+// Restore admin session if saved
+const savedAdmin = localStorage.getItem('frisbee_admin');
+if (savedAdmin) {
+  loginAdmin(savedAdmin, true);
+} else {
+  loadGames();
+}
+</script>
+</body>
+</html>
