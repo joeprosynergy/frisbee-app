@@ -535,9 +535,12 @@ async function loadGames() {
             <div class="game-label">${esc(game.label)}${isDraft ? '<span class="draft-badge">Draft</span>' : ''}</div>
             <div class="game-meta">${formatDate(game.game_date)} &middot; ${formatTime(game.game_time)}</div>
           </div>
-          <span class="spots-badge ${spotsLeft > 0 ? 'spots-open' : 'spots-full'}">
-            ${spotsLeft > 0 ? spotsLeft + ' spot' + (spotsLeft !== 1 ? 's' : '') : 'Full'}
-          </span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            ${players.length ? `<button class="btn-copy" onclick="event.stopPropagation();copyList('${game.id}')">Copy</button>` : ''}
+            <span class="spots-badge ${spotsLeft > 0 ? 'spots-open' : 'spots-full'}">
+              ${spotsLeft > 0 ? spotsLeft + ' spot' + (spotsLeft !== 1 ? 's' : '') : 'Full'}
+            </span>
+          </div>
         </div>`;
 
       if (roster.length) {
@@ -558,10 +561,6 @@ async function loadGames() {
 
       // Store data for copy
       gamesData[game.id] = { game, roster, waitlist };
-
-      if (players.length) {
-        html += `<button class="btn-copy" onclick="copyList('${game.id}')">Copy list</button>`;
-      }
 
       if (!isDraft) {
         html += `<div class="signup-area">
