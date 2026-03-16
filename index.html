@@ -292,6 +292,49 @@
       margin-top: 10px;
     }
     .btn-copy:active { background: #f5f5f5; }
+    .card.archived-card { opacity: 0.5; }
+    .archived-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: #eee;
+      color: #999;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .btn-unarchive {
+      background: #1976d2;
+      color: #fff;
+      font-size: 0.85rem;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .archive-section { margin-top: 20px; }
+    .archive-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: #bbb;
+      font-size: 0.8rem;
+      cursor: pointer;
+      width: 100%;
+      padding: 8px;
+    }
+    .archive-toggle .arrow {
+      transition: transform 0.2s;
+      display: inline-block;
+    }
+    .archive-toggle.open .arrow { transform: rotate(180deg); }
 
     .toast {
       position: fixed;
@@ -323,6 +366,15 @@
 
 <div id="games-container">
   <div class="empty-state">Loading...</div>
+</div>
+
+<!-- Archives (admin only) -->
+<div class="archive-section" id="archive-section" style="display:none;">
+  <button class="archive-toggle" id="archive-toggle" onclick="toggleArchives()">
+    <span>Archived games</span>
+    <span class="arrow">&#9660;</span>
+  </button>
+  <div id="archive-container" style="display:none;"></div>
 </div>
 
 <!-- Activity Log -->
@@ -500,7 +552,9 @@ async function loadGames() {
 
   try {
     let gamesParam = 'order=game_date.asc,game_time.asc';
-    if (!adminPass) {
+    if (adminPass) {
+      gamesParam += '&status=in.(draft,live)';
+    } else {
       gamesParam += '&status=eq.live';
     }
     const games = await query('games', gamesParam);
@@ -610,10 +664,110 @@ async function loadGames() {
     }
 
     container.innerHTML = html;
+
+    // Show/hide archive section for admins
+    const archiveSection = document.getElementById('archive-section');
+    if (adminPass) {
+      archiveSection.style.display = 'block';
+    } else {
+      archiveSection.style.display = 'none';
+    }
   } catch (e) {
     container.innerHTML = '<div class="empty-state">Couldn\'t load games. Try refreshing.</div>';
     console.error(e);
   }
+}
+
+function toggleArchives() {
+  const container = document.getElementById('archive-container');
+  const btn = document.getElementById('archive-toggle');
+  const showing = container.style.display !== 'none';
+  if (showing) {
+    container.style.display = 'none';
+    btn.classList.remove('open');
+  } else {
+    container.style.display = 'block';
+    btn.classList.add('open');
+    loadArchives();
+  }
+}
+
+async function loadArchives() {
+  const container = document.getElementById('archive-container');
+  try {
+    const games = await query('games', 'status=eq.archived&order=game_date.desc,game_time.desc');
+    if (!games.length) {
+      container.innerHTML = '<div class="card"><div class="empty-state" style="padding:16px;">No archived games.</div></div>';
+      return;
+    }
+    for (const g of games) { gameLabels[g.id] = g.label; }
+    const gameIds = games.map(g => g.id);
+    const signups = await query('signups', `game_id=in.(${gameIds.join(',')})&order=created_at.asc`);
+    const signupsByGame = {};
+    for (const s of signups) {
+      if (!signupsByGame[s.game_id]) signupsByGame[s.game_id] = [];
+      signupsByGame[s.game_id].push(s);
+    }
+
+    let html = '';
+    for (const game of games) {
+      const players = signupsByGame[game.id] || [];
+      const roster = players.slice(0, game.max_players);
+      const waitlist = players.slice(game.max_players);
+
+      gamesData[game.id] = { game, roster, waitlist };
+
+      html += `<div class="card archived-card">
+        <div class="game-header">
+          <div>
+            <div class="game-label">${esc(game.label)}<span class="archived-badge">Archived</span></div>
+            <div class="game-meta">${formatDate(game.game_date)} &middot; ${formatTime(game.game_time)}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            ${players.length ? `<button class="btn-copy" onclick="event.stopPropagation();copyList('${game.id}')">Copy</button>` : ''}
+          </div>
+        </div>`;
+
+      if (roster.length) {
+        html += `<div class="roster"><div class="roster-title">Played (${roster.length})</div>`;
+        roster.forEach((p, i) => {
+          html += `<div class="player-row" style="cursor:default;">
+            <span class="player-num">${i + 1}</span>
+            <span class="player-name">${esc(p.player_name)}</span>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+
+      if (waitlist.length) {
+        html += `<div class="waitlist-divider">Waitlist</div><div class="roster">`;
+        waitlist.forEach((p, i) => {
+          html += `<div class="player-row" style="cursor:default;">
+            <span class="player-num">W${i + 1}</span>
+            <span class="player-name">${esc(p.player_name)}</span>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+
+      html += `<div class="game-admin-actions">
+        <button class="btn-unarchive" onclick="unarchiveGame('${game.id}')">Unarchive</button>
+        <button class="btn-danger btn-small" onclick="deleteGame('${game.id}')">Delete Game</button>
+      </div></div>`;
+    }
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div class="card"><div class="empty-state" style="padding:16px;">Couldn\'t load archives.</div></div>';
+  }
+}
+
+async function unarchiveGame(gameId) {
+  try {
+    await rpc('unarchive_game', { pass: adminPass, p_game_id: gameId });
+    toast('Game restored!');
+    loadGames();
+    loadArchives();
+  } catch (e) { toast('Error unarchiving game'); }
 }
 
 function playerRow(num, player, gameId) {
