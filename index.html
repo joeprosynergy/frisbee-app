@@ -208,6 +208,79 @@
       margin-top: 10px;
       justify-content: flex-end;
     }
+    .draft-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: #fff3e0;
+      color: #e65100;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .card.draft-card {
+      border: 2px dashed #ffcc80;
+      opacity: 0.9;
+    }
+    .btn-publish {
+      background: #2e7d32;
+      color: #fff;
+      font-size: 0.85rem;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-publish:active { background: #1b5e20; }
+    .btn-edit {
+      background: #1976d2;
+      color: #fff;
+      font-size: 0.85rem;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-edit:active { background: #1565c0; }
+    .edit-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
+    .edit-form .form-group { margin-bottom: 8px; }
+    .edit-form .form-group label { display: block; font-size: 0.75rem; color: #888; margin-bottom: 3px; }
+    .edit-form .form-group input {
+      width: 100%;
+      padding: 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      outline: none;
+      -webkit-appearance: none;
+    }
+    .edit-form .form-group input:focus { border-color: #1976d2; }
+    .edit-form-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .btn-save {
+      background: #1976d2;
+      color: #fff;
+      font-size: 0.85rem;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-cancel {
+      background: #eee;
+      color: #666;
+      font-size: 0.85rem;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
 
     .toast {
       position: fixed;
@@ -333,6 +406,7 @@ async function rpc(fn, params) {
     method: 'POST', headers: headers(), body: JSON.stringify(params)
   });
   if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed'); }
+  if (res.status === 204) return null;
   return res.json();
 }
 
@@ -413,7 +487,11 @@ async function loadGames() {
   const container = document.getElementById('games-container');
 
   try {
-    const games = await query('games', 'order=game_date.asc,game_time.asc');
+    let gamesParam = 'order=game_date.asc,game_time.asc';
+    if (!adminPass) {
+      gamesParam += '&status=eq.live';
+    }
+    const games = await query('games', gamesParam);
     if (!games.length) {
       container.innerHTML = '<div class="empty-state">No games scheduled yet.</div>';
       return;
@@ -437,11 +515,12 @@ async function loadGames() {
       const roster = players.slice(0, game.max_players);
       const waitlist = players.slice(game.max_players);
       const spotsLeft = Math.max(0, game.max_players - roster.length);
+      const isDraft = game.status === 'draft';
 
-      html += `<div class="card">
+      html += `<div class="card${isDraft ? ' draft-card' : ''}">
         <div class="game-header">
           <div>
-            <div class="game-label">${esc(game.label)}</div>
+            <div class="game-label">${esc(game.label)}${isDraft ? '<span class="draft-badge">Draft</span>' : ''}</div>
             <div class="game-meta">${formatDate(game.game_date)} &middot; ${formatTime(game.game_time)}</div>
           </div>
           <span class="spots-badge ${spotsLeft > 0 ? 'spots-open' : 'spots-full'}">
@@ -465,18 +544,48 @@ async function loadGames() {
         html += `</div>`;
       }
 
-      html += `<div class="signup-area">
-        <div class="signup-row">
-          <input type="text" id="name-${game.id}" placeholder="Name" maxlength="30" onkeydown="if(event.key==='Enter')signup('${game.id}')">
-          <button class="btn-join" onclick="signup('${game.id}')">I'm in</button>
-        </div>
-        <div class="signup-hint">Enter the name of the person you want to sign up</div>
-      </div>`;
+      if (!isDraft) {
+        html += `<div class="signup-area">
+          <div class="signup-row">
+            <input type="text" id="name-${game.id}" placeholder="Name" maxlength="30" onkeydown="if(event.key==='Enter')signup('${game.id}')">
+            <button class="btn-join" onclick="signup('${game.id}')">I'm in</button>
+          </div>
+          <div class="signup-hint">Enter the name of the person you want to sign up</div>
+        </div>`;
+      }
 
       if (adminPass) {
-        html += `<div class="game-admin-actions">
-          <button class="btn-danger btn-small" onclick="deleteGame('${game.id}')">Delete Game</button>
+        html += `<div class="game-admin-actions">`;
+        if (isDraft) {
+          html += `<button class="btn-edit" onclick="toggleEditGame('${game.id}')">Edit</button>`;
+          html += `<button class="btn-publish" onclick="publishGame('${game.id}')">Go Live</button>`;
+        }
+        html += `<button class="btn-danger btn-small" onclick="deleteGame('${game.id}')">Delete Game</button>
         </div>`;
+        if (isDraft) {
+          html += `<div class="edit-form" id="edit-form-${game.id}" style="display:none;">
+            <div class="form-group">
+              <label>Label</label>
+              <input type="text" id="edit-label-${game.id}" value="${escAttr(game.label)}">
+            </div>
+            <div class="form-group">
+              <label>Date</label>
+              <input type="date" id="edit-date-${game.id}" value="${game.game_date}">
+            </div>
+            <div class="form-group">
+              <label>Time</label>
+              <input type="time" id="edit-time-${game.id}" value="${game.game_time}">
+            </div>
+            <div class="form-group">
+              <label>Max Players</label>
+              <input type="number" id="edit-max-${game.id}" value="${game.max_players}" min="2" max="50">
+            </div>
+            <div class="edit-form-actions">
+              <button class="btn-save" onclick="saveEditGame('${game.id}')">Save</button>
+              <button class="btn-cancel" onclick="toggleEditGame('${game.id}')">Cancel</button>
+            </div>
+          </div>`;
+        }
       }
 
       html += `</div>`;
@@ -612,10 +721,13 @@ async function loadLog(full) {
           desc = `<strong>${esc(entry.actor_name)}</strong> (admin) removed <strong>${esc(entry.player_name)}</strong> from ${esc(label)}`;
           break;
         case 'game_created':
-          desc = `<strong>${esc(entry.actor_name)}</strong> created ${esc(label)}`;
+          desc = `<strong>${esc(entry.actor_name)}</strong> created ${esc(entry.player_name || label)}`;
+          break;
+        case 'game_published':
+          desc = `<strong>${esc(entry.actor_name)}</strong> published ${esc(entry.player_name || label)}`;
           break;
         case 'game_deleted':
-          desc = `<strong>${esc(entry.actor_name)}</strong> deleted a game`;
+          desc = `<strong>${esc(entry.actor_name)}</strong> deleted ${esc(entry.player_name || 'a game')}`;
           break;
         default:
           desc = `${esc(entry.action)}`;
@@ -689,17 +801,45 @@ async function createGame() {
 
   try {
     const gameId = await rpc('create_game', { pass: adminPass, p_date: date, p_time: time, p_label: label, p_max_players: max });
-    await logActivity(gameId, 'game_created', null, adminName, true);
+    await logActivity(gameId, 'game_created', label, adminName, true);
     toast('Game created!');
     document.getElementById('game-label').value = '';
     loadGames();
   } catch (e) { toast('Error creating game'); }
 }
 
+function toggleEditGame(gameId) {
+  const form = document.getElementById(`edit-form-${gameId}`);
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function saveEditGame(gameId) {
+  const label = document.getElementById(`edit-label-${gameId}`).value.trim();
+  const date = document.getElementById(`edit-date-${gameId}`).value;
+  const time = document.getElementById(`edit-time-${gameId}`).value;
+  const max = parseInt(document.getElementById(`edit-max-${gameId}`).value);
+  if (!label || !date || !time) { toast('Fill in all fields'); return; }
+
+  try {
+    await rpc('update_game', { pass: adminPass, p_game_id: gameId, p_date: date, p_time: time, p_label: label, p_max_players: max });
+    toast('Game updated');
+    loadGames();
+  } catch (e) { toast('Error updating game'); }
+}
+
+async function publishGame(gameId) {
+  try {
+    await rpc('publish_game', { pass: adminPass, p_game_id: gameId });
+    await logActivity(gameId, 'game_published', gameLabels[gameId] || null, adminName, true);
+    toast('Game is live!');
+    loadGames();
+  } catch (e) { toast('Error publishing game'); }
+}
+
 async function deleteGame(gameId) {
   if (!confirm('Delete this game and all signups?')) return;
   try {
-    await logActivity(gameId, 'game_deleted', null, adminName, true);
+    await logActivity(gameId, 'game_deleted', gameLabels[gameId] || null, adminName, true);
     await rpc('delete_game', { pass: adminPass, p_game_id: gameId });
     toast('Deleted');
     loadGames();
