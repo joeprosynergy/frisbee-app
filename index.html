@@ -830,7 +830,8 @@ function copyList(gameId) {
   const d = gamesData[gameId];
   if (!d) return;
   const { game, roster, waitlist } = d;
-  let text = `${game.label} — ${formatDate(game.game_date)}, ${formatTime(game.game_time)}\n\n`;
+  const notice = 'DO NOT COPY THIS MESSAGE, USE THIS LINK FOR SIGNUP!\neasygameroster.com';
+  let text = `${notice}\n\n${game.label} — ${formatDate(game.game_date)}, ${formatTime(game.game_time)}\n\n`;
   roster.forEach((p, i) => {
     text += `${i + 1}. ${p.player_name}\n`;
   });
@@ -840,6 +841,7 @@ function copyList(gameId) {
       text += `W${i + 1}. ${p.player_name}\n`;
     });
   }
+  text += `\n${notice}`;
   navigator.clipboard.writeText(text.trim()).then(() => toast('Copied!')).catch(() => toast('Couldn\'t copy'));
 }
 
