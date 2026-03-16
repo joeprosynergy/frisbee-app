@@ -281,6 +281,17 @@
       cursor: pointer;
       font-weight: 600;
     }
+    .btn-copy {
+      background: none;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 0.78rem;
+      color: #888;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .btn-copy:active { background: #f5f5f5; }
 
     .toast {
       position: fixed;
@@ -480,8 +491,9 @@ async function logActivity(gameId, action, playerName, actorName, isAdmin) {
   }
 }
 
-// Cache game labels for log display
+// Cache game labels and data for log display and copy
 let gameLabels = {};
+let gamesData = {};
 
 async function loadGames() {
   const container = document.getElementById('games-container');
@@ -542,6 +554,13 @@ async function loadGames() {
           html += playerRow('W' + (i + 1), p, game.id);
         });
         html += `</div>`;
+      }
+
+      // Store data for copy
+      gamesData[game.id] = { game, roster, waitlist };
+
+      if (players.length) {
+        html += `<button class="btn-copy" onclick="copyList('${game.id}')">Copy list</button>`;
       }
 
       if (!isDraft) {
@@ -806,6 +825,23 @@ async function createGame() {
     document.getElementById('game-label').value = '';
     loadGames();
   } catch (e) { toast('Error creating game'); }
+}
+
+function copyList(gameId) {
+  const d = gamesData[gameId];
+  if (!d) return;
+  const { game, roster, waitlist } = d;
+  let text = `${game.label} — ${formatDate(game.game_date)}, ${formatTime(game.game_time)}\n\n`;
+  roster.forEach((p, i) => {
+    text += `${i + 1}. ${p.player_name}\n`;
+  });
+  if (waitlist.length) {
+    text += `\nWaitlist\n`;
+    waitlist.forEach((p, i) => {
+      text += `W${i + 1}. ${p.player_name}\n`;
+    });
+  }
+  navigator.clipboard.writeText(text.trim()).then(() => toast('Copied!')).catch(() => toast('Couldn\'t copy'));
 }
 
 function toggleEditGame(gameId) {
