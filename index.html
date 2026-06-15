@@ -1232,6 +1232,17 @@ function pushSupported() {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 }
 
+// Is this existing subscription tied to the CURRENT VAPID key? (false → stale, replace it)
+function subKeyMatches(sub) {
+  try {
+    const want = urlB64ToUint8Array(VAPID_PUBLIC_KEY);
+    const have = new Uint8Array(sub.options.applicationServerKey);
+    if (have.length !== want.length) return false;
+    for (let i = 0; i < want.length; i++) if (have[i] !== want[i]) return false;
+    return true;
+  } catch (e) { return true; } // can't determine → don't churn it
+}
+
 async function initNotify() {
   if (!pushSupported()) return; // unsupported browser → leave the bar hidden
   document.getElementById('notify-bar').style.display = 'block';
@@ -1258,7 +1269,7 @@ async function refreshNotifyState() {
     return;
   }
   const sub = swReg && await swReg.pushManager.getSubscription();
-  if (sub) { btn.textContent = '🔔 Alerts on ✓'; btn.classList.add('on'); }
+  if (sub && subKeyMatches(sub)) { btn.textContent = '🔔 Alerts on ✓'; btn.classList.add('on'); }
   else { btn.textContent = '🔔 Get game alerts'; btn.classList.remove('on'); }
 }
 
@@ -1276,13 +1287,19 @@ async function toggleNotify() {
     await navigator.serviceWorker.register('/sw.js');
     swReg = await navigator.serviceWorker.ready; // wait for the SW to be ACTIVE before subscribing
     const existing = await swReg.pushManager.getSubscription();
-    if (existing) {
+    if (existing && subKeyMatches(existing)) {
+      // valid current subscription → second tap means turn OFF
       const endpoint = existing.endpoint;
       await existing.unsubscribe();
       await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, { method: 'DELETE', headers: headers() });
       toast('Alerts turned off');
       await refreshNotifyState();
       return;
+    }
+    if (existing) {
+      // stale subscription from an old key → drop it, then subscribe fresh below
+      try { await existing.unsubscribe(); } catch (e) {}
+      fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(existing.endpoint)}`, { method: 'DELETE', headers: headers() }).catch(() => {});
     }
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') {
