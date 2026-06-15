@@ -26,6 +26,47 @@
       -webkit-tap-highlight-color: transparent;
     }
     h1 { font-size: 1.5rem; text-align: center; margin-bottom: 4px; }
+    .app-header { position: relative; }
+    .hdr-btn {
+      position: absolute;
+      top: -3px;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 1px solid #e0e0e0;
+      background: #fff;
+      color: #1976d2;
+      font-size: 1.2rem;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-appearance: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .hdr-btn:active { background: #f0f0f0; }
+    #theme-btn { right: 44px; }
+    .refresh-btn { right: 0; font-size: 1.35rem; }
+    .refresh-btn.spinning { animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .ptr {
+      position: fixed;
+      top: 0; left: 50%;
+      transform: translateX(-50%) translateY(-100%);
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+      display: flex; align-items: center; justify-content: center;
+      color: #1976d2; font-size: 1.3rem;
+      z-index: 150; opacity: 0; pointer-events: none;
+    }
+    .ptr.snap { transition: transform 0.22s ease, opacity 0.22s ease; }
+    .ptr.ready { color: #2e7d32; }
+    .ptr-icon { display: inline-block; }
+    .ptr.refreshing .ptr-icon { animation: spin 0.7s linear infinite; }
+    body { overscroll-behavior-y: contain; }
     .subtitle { text-align: center; color: #888; font-size: 0.85rem; margin-bottom: 20px; }
     .notify-bar { text-align: center; margin: -8px 0 18px; }
     .btn-notify { background: #fff; border: 1px solid #1976d2; color: #1976d2; border-radius: 20px; padding: 8px 16px; font-size: 0.85rem; font-weight: 600; cursor: pointer; -webkit-appearance: none; }
@@ -445,16 +486,95 @@
       line-height: 1.4;
     }
     .toast.show { opacity: 1; }
+
+    /* ---------- Dark mode (gamey, high-contrast) ---------- */
+    body.dark {
+      background: radial-gradient(1100px 600px at 50% -12%, #1e2050 0%, #14152e 62%);
+      color: #ececf7;
+    }
+    body.dark h1 { color: #f3f3fb; }
+    body.dark .subtitle { color: #9a9cc8; }
+    body.dark .card {
+      background: #20224a;
+      border: 1px solid #2f3266;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.4);
+    }
+    body.dark .game-label { color: #f3f3fb; }
+    body.dark .game-meta { color: #a6a8d4; }
+    body.dark .roster-title { color: #8385b8; }
+    body.dark .player-num { color: #6f72a6; }
+    body.dark .player-row { border-bottom-color: #2a2c57; }
+    body.dark .player-name { color: #ececf7; }
+    body.dark .spots-open { background: #173a2e; color: #4ade80; }
+    body.dark .spots-full { background: #3a2c12; color: #fbbf24; }
+    body.dark .waitlist-divider { color: #fbbf24; }
+    body.dark .signup-row input,
+    body.dark .form-group input,
+    body.dark .edit-form .form-group input,
+    body.dark .modal .form-group input {
+      background: #191a36; border-color: #383b6e; color: #ececf7;
+    }
+    body.dark input::placeholder { color: #7e80b0; }
+    body.dark .signup-row input:focus,
+    body.dark .form-group input:focus,
+    body.dark .edit-form .form-group input:focus,
+    body.dark .modal .form-group input:focus { border-color: #5b8cff; }
+    body.dark .btn-join { background: #4d7cff; box-shadow: 0 2px 12px rgba(77,124,255,0.4); }
+    body.dark .btn-join:active { background: #3f6ae0; }
+    body.dark .signup-hint, body.dark .notify-hint { color: #7e80b0; }
+    body.dark .empty-state { color: #8385b8; }
+    body.dark .log-toggle, body.dark .archive-toggle { color: #8385b8; }
+    body.dark .log-entry { border-bottom-color: #2a2c57; color: #a6a8d4; }
+    body.dark .log-action { color: #d8d9f0; }
+    body.dark .log-time { color: #6f72a6; }
+    body.dark .log-more button, body.dark .btn-copy {
+      background: #20224a; border-color: #383b6e; color: #b9bbe6;
+    }
+    body.dark .hdr-btn, body.dark .ptr {
+      background: #20224a; border-color: #383b6e; color: #8ab0ff;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.45);
+    }
+    body.dark .hdr-btn:active { background: #2a2c57; }
+    body.dark .ptr.ready { color: #4ade80; }
+    body.dark .modal { background: #20224a; color: #ececf7; box-shadow: 0 12px 44px rgba(0,0,0,0.65); }
+    body.dark .modal-title { color: #f3f3fb; }
+    body.dark .modal .form-group label, body.dark .form-group label { color: #9a9cc8; }
+    body.dark .btn-cancel { background: #2a2c57; color: #b9bbe6; }
+    body.dark .btn-notify { background: #20224a; border-color: #5b8cff; color: #8ab0ff; }
+    body.dark .btn-notify.on { background: #1c2f5e; }
+    body.dark .you-tag { background: #1c2f5e; color: #8ab0ff; }
+    body.dark .draft-badge { background: #3a2c12; color: #fbbf24; }
+    body.dark .archived-badge { background: #2a2c57; color: #9a9cc8; }
+    body.dark .card.draft-card { border: 2px dashed #6b5a2a; }
+    body.dark .card.archived-card { opacity: 0.6; }
+    body.dark .admin-toggle button { color: #5a5d8f; }
+    body.dark .player-x { color: #ff6b6b; }
+    body.dark .player-x:active { color: #ff4d4d; }
+    body.dark .install-banner { background: #2a2c57; }
+    body.dark .btn-install { background: #5b8cff; color: #fff; }
+    body.dark .admin-panel h2 { color: #f3f3fb; }
+    body.dark .form-actions .btn,
+    body.dark .btn-edit, body.dark .btn-save, body.dark .btn-unarchive { background: #4d7cff; }
+    body.dark .btn-publish { background: #2e9e5b; }
+    body.dark .btn-danger { background: #e0494c; }
   </style>
 </head>
 <body>
+
+<script>(function(){try{var s=localStorage.getItem('egr_theme');var d=s?s==='dark':(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches);if(d)document.body.classList.add('dark');}catch(e){}})();</script>
+
+<div id="ptr" class="ptr"><span class="ptr-icon">&#8635;</span></div>
 
 <div id="install-banner" class="install-banner" style="display:none;">
   <span id="install-text">Install Game Roster</span>
   <button id="install-btn" class="btn-install" onclick="doInstall()">Install</button>
 </div>
 
-<h1>Game Roster</h1>
+<div class="app-header">
+  <h1>Game Roster</h1>
+  <button class="hdr-btn" id="theme-btn" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Dark / light">&#9790;</button>
+  <button class="hdr-btn refresh-btn" id="refresh-btn" onclick="manualRefresh()" aria-label="Refresh" title="Refresh">&#8635;</button>
+</div>
 <p class="subtitle">Type a name, tap "I'm in."</p>
 
 <div class="notify-bar" id="notify-bar" style="display:none;">
@@ -1243,11 +1363,31 @@ function subKeyMatches(sub) {
   } catch (e) { return true; } // can't determine → don't churn it
 }
 
+// Save a subscription to the DB. return=minimal avoids a SELECT-back that RLS blocks
+// (that was the "could not enable alerts" bug); ignore-duplicates makes it idempotent,
+// so we can safely re-store the same device on every load.
+function storeSubscription(sub) {
+  const j = sub.toJSON();
+  return fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions`, {
+    method: 'POST',
+    headers: { ...headers(), 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent })
+  });
+}
+
 async function initNotify() {
   if (!pushSupported()) return; // unsupported browser → leave the bar hidden
   document.getElementById('notify-bar').style.display = 'block';
-  try { swReg = await navigator.serviceWorker.register('/sw.js'); } catch (e) {}
+  try {
+    await navigator.serviceWorker.register('/sw.js');
+    swReg = await navigator.serviceWorker.ready;
+  } catch (e) {}
   await refreshNotifyState();
+  // Self-heal: if this device already subscribed (current key) but the row never saved, save it now.
+  try {
+    const sub = swReg && await swReg.pushManager.getSubscription();
+    if (sub && subKeyMatches(sub)) await storeSubscription(sub);
+  } catch (e) {}
 }
 
 async function refreshNotifyState() {
@@ -1308,14 +1448,13 @@ async function toggleNotify() {
       return;
     }
     const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY) });
-    const j = sub.toJSON();
-    const res = await insert('push_subscriptions', { endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent });
+    const res = await storeSubscription(sub);
     if (res.ok || res.status === 201 || res.status === 409) {
       toast("Done — you'll get game alerts on this device 🔔", 4000);
     } else {
       const t = await res.text().catch(() => '');
       console.error('subscription save failed', res.status, t);
-      toast('Could not save your subscription. Try again.');
+      toast('Could not save your subscription (' + res.status + '). Try again.');
     }
     await refreshNotifyState();
   } catch (e) {
@@ -1382,6 +1521,74 @@ function initInstall() {
   if (isIOSDevice()) showInstallBanner(); // iOS gets no beforeinstallprompt, so show the guide now
   // Android shows the banner when beforeinstallprompt fires
 }
+
+// ---- Refresh button ----
+async function manualRefresh() {
+  const b = document.getElementById('refresh-btn');
+  if (b) b.classList.add('spinning');
+  try { await loadGames(); } catch (e) {}
+  setTimeout(() => { if (b) b.classList.remove('spinning'); }, 450);
+}
+
+// ---- Dark / light theme ----
+function applyTheme(t) {
+  document.body.classList.toggle('dark', t === 'dark');
+  const btn = document.getElementById('theme-btn');
+  if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;'; // sun while dark, moon while light
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', t === 'dark' ? '#14152e' : '#1976d2');
+}
+function currentTheme() {
+  try {
+    const s = localStorage.getItem('egr_theme');
+    if (s === 'dark' || s === 'light') return s;
+  } catch (e) {}
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+}
+function toggleTheme() {
+  const next = document.body.classList.contains('dark') ? 'light' : 'dark';
+  try { localStorage.setItem('egr_theme', next); } catch (e) {}
+  applyTheme(next);
+}
+applyTheme(currentTheme());
+
+// ---- Pull-to-refresh (custom; native is disabled via overscroll-behavior) ----
+(function setupPTR() {
+  const ptr = document.getElementById('ptr');
+  if (!ptr) return;
+  let startY = 0, pulling = false, pull = 0;
+  const THRESH = 65;
+  window.addEventListener('touchstart', (e) => {
+    const modal = document.getElementById('modal-overlay');
+    const modalOpen = modal && modal.style.display === 'flex';
+    if (!modalOpen && window.scrollY <= 0 && e.touches.length === 1) {
+      startY = e.touches[0].clientY; pulling = true; pull = 0; ptr.classList.remove('snap');
+    } else pulling = false;
+  }, { passive: true });
+  window.addEventListener('touchmove', (e) => {
+    if (!pulling) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy <= 0 || window.scrollY > 0) { pulling = false; ptr.style.transform = 'translateX(-50%) translateY(-100%)'; ptr.style.opacity = '0'; return; }
+    pull = Math.min(dy * 0.5, 80);
+    ptr.style.transform = `translateX(-50%) translateY(${Math.max(pull - 36, 4)}px)`;
+    ptr.style.opacity = String(Math.min(1, pull / THRESH));
+    ptr.classList.toggle('ready', pull >= THRESH);
+  }, { passive: true });
+  window.addEventListener('touchend', async () => {
+    if (!pulling) return;
+    pulling = false;
+    ptr.classList.add('snap');
+    if (pull >= THRESH) {
+      ptr.style.transform = 'translateX(-50%) translateY(12px)';
+      ptr.style.opacity = '1';
+      ptr.classList.add('refreshing');
+      try { await loadGames(); } catch (e) {}
+      ptr.classList.remove('refreshing', 'ready');
+    }
+    ptr.style.transform = 'translateX(-50%) translateY(-100%)';
+    ptr.style.opacity = '0';
+  });
+})();
 
 // Default date (LOCAL calendar date, not UTC)
 const dateInput = document.getElementById('game-date');
