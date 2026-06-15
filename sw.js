@@ -1,10 +1,10 @@
-// EasyGameRoster service worker — web push + installability.
-// Intentionally does NO caching: a no-op fetch handler satisfies the installability
-// criterion while every request still goes to the network, so deploys are never stale
-// and rosters are never served from a cache.
+// EasyGameRoster service worker — web push only.
+// Deliberately has NO fetch handler: it must never intercept page loads or the
+// Supabase API calls (that interception was making mobile loads slow/hang). No
+// caching either, so content is always fresh. Push still works without a fetch handler,
+// and modern Chrome installs from the manifest alone.
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
-self.addEventListener('fetch', () => {});
 
 self.addEventListener('push', (event) => {
   let data = {};
