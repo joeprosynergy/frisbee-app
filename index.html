@@ -4,6 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Game Roster</title>
+  <meta name="theme-color" content="#1976d2">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" href="/icon-192.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Roster">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -19,6 +27,11 @@
     }
     h1 { font-size: 1.5rem; text-align: center; margin-bottom: 4px; }
     .subtitle { text-align: center; color: #888; font-size: 0.85rem; margin-bottom: 20px; }
+    .notify-bar { text-align: center; margin: -8px 0 18px; }
+    .btn-notify { background: #fff; border: 1px solid #1976d2; color: #1976d2; border-radius: 20px; padding: 8px 16px; font-size: 0.85rem; font-weight: 600; cursor: pointer; -webkit-appearance: none; }
+    .btn-notify.on { background: #e3f2fd; }
+    .btn-notify:active { background: #e3f2fd; }
+    .notify-hint { font-size: 0.72rem; color: #999; margin-top: 6px; line-height: 1.4; padding: 0 16px; }
 
     .card {
       background: #fff;
@@ -377,6 +390,11 @@
 
 <h1>Game Roster</h1>
 <p class="subtitle">Type a name, tap "I'm in."</p>
+
+<div class="notify-bar" id="notify-bar" style="display:none;">
+  <button class="btn-notify" id="notify-btn" onclick="toggleNotify()">&#128276; Get game alerts</button>
+  <div class="notify-hint" id="notify-hint"></div>
+</div>
 
 <div id="games-container">
   <div class="empty-state">Loading...</div>
@@ -1102,6 +1120,85 @@ async function addAdmin() {
   } catch (e) { toast('Error adding admin'); }
 }
 
+// ---- Push notifications (PWA) ----
+const VAPID_PUBLIC_KEY = 'BPX4ioACwG8-5OgIpD3_hevvsCQhf5n64V58Uh9V1ze3jRXlnguJBP7Dpnv8db4Qp_vqInNrPi9zat6K0KHCQCo';
+let swReg = null;
+
+function urlB64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+function pushSupported() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+async function initNotify() {
+  if (!pushSupported()) return; // unsupported browser → leave the bar hidden
+  document.getElementById('notify-bar').style.display = 'block';
+  try { swReg = await navigator.serviceWorker.register('/sw.js'); } catch (e) {}
+  await refreshNotifyState();
+}
+
+async function refreshNotifyState() {
+  const btn = document.getElementById('notify-btn');
+  const hint = document.getElementById('notify-hint');
+  hint.textContent = '';
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (isIOS && !standalone) {
+    btn.textContent = '🔔 Get game alerts';
+    btn.classList.remove('on');
+    hint.textContent = 'On iPhone: tap Share → Add to Home Screen, then open it from your home screen and turn alerts on.';
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    btn.textContent = '🔔 Alerts blocked';
+    btn.classList.remove('on');
+    hint.textContent = 'Notifications are blocked — enable them in your browser settings.';
+    return;
+  }
+  const sub = swReg && await swReg.pushManager.getSubscription();
+  if (sub) { btn.textContent = '🔔 Alerts on ✓'; btn.classList.add('on'); }
+  else { btn.textContent = '🔔 Get game alerts'; btn.classList.remove('on'); }
+}
+
+async function toggleNotify() {
+  if (!pushSupported()) return;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (isIOS && !standalone) {
+    toast('On iPhone: tap Share → Add to Home Screen first, then open it and turn alerts on.', 6000);
+    return;
+  }
+  try {
+    if (!swReg) swReg = await navigator.serviceWorker.register('/sw.js');
+    const existing = await swReg.pushManager.getSubscription();
+    if (existing) {
+      const endpoint = existing.endpoint;
+      await existing.unsubscribe();
+      await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, { method: 'DELETE', headers: headers() });
+      toast('Alerts off');
+      await refreshNotifyState();
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { toast('Notifications not allowed'); await refreshNotifyState(); return; }
+    const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY) });
+    const j = sub.toJSON();
+    const res = await insert('push_subscriptions', { endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent });
+    if (res.ok || res.status === 201 || res.status === 409) toast("You'll get game alerts 🔔");
+    else toast('Could not enable alerts');
+    await refreshNotifyState();
+  } catch (e) {
+    toast('Could not enable alerts');
+  }
+}
+
 // Default date (LOCAL calendar date, not UTC)
 const dateInput = document.getElementById('game-date');
 if (dateInput) {
@@ -1127,6 +1224,8 @@ if (savedAdmin) {
 } else {
   loadGames();
 }
+
+initNotify();
 </script>
 </body>
 </html>
