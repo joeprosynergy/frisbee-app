@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Game Roster</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -59,10 +59,9 @@
       padding: 8px 0;
       border-bottom: 1px solid #f5f5f5;
       font-size: 0.95rem;
-      cursor: pointer;
     }
     .player-row:last-child { border-bottom: none; }
-    .player-row:active { background: #fff0f0; }
+    .player-row.me .player-name { font-weight: 700; }
     .player-num {
       color: #bbb;
       width: 28px;
@@ -71,9 +70,23 @@
     }
     .player-name { flex: 1; }
     .player-x {
-      color: #ddd;
-      font-size: 1.2rem;
-      padding: 0 4px;
+      color: #e57373;
+      font-size: 1.35rem;
+      padding: 4px 8px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .player-x:active { color: #c62828; }
+    .you-tag {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #1976d2;
+      background: #e3f2fd;
+      padding: 1px 6px;
+      border-radius: 6px;
+      margin-left: 6px;
+      vertical-align: middle;
     }
 
     .waitlist-divider {
@@ -112,6 +125,7 @@
       -webkit-appearance: none;
     }
     .btn-join:active { background: #1565c0; }
+    .btn-join:disabled { opacity: 0.55; }
     .signup-hint {
       font-size: 0.75rem;
       color: #aaa;
@@ -255,7 +269,7 @@
       padding: 10px;
       border: 2px solid #e0e0e0;
       border-radius: 8px;
-      font-size: 0.95rem;
+      font-size: 16px;
       outline: none;
       -webkit-appearance: none;
     }
@@ -528,6 +542,40 @@ function escAttr(str) {
   return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
+// Proper HTML-attribute escaper for value="..." (escAttr above is for JS-string contexts only)
+function escAttrHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Remember the names this device signed up, so a player can spot their own row
+function myNames() {
+  try { return new Set(JSON.parse(localStorage.getItem('egr_my_names') || '[]')); }
+  catch (e) { return new Set(); }
+}
+function rememberMyName(name) {
+  const s = myNames();
+  s.add(name.trim().toLowerCase());
+  try { localStorage.setItem('egr_my_names', JSON.stringify([...s])); } catch (e) {}
+}
+let myNameSet = myNames();
+
+// After a signup + refresh, tell the player their true position (in vs waitlist)
+function signupMessage(gameId, name) {
+  const d = gamesData[gameId];
+  const n = (name || '').trim().toLowerCase();
+  if (!d) return `${name} is in!`;
+  const r = d.roster.findIndex(p => (p.player_name || '').toLowerCase() === n);
+  if (r !== -1) return `${name} is in!  (#${r + 1})`;
+  const w = d.waitlist.findIndex(p => (p.player_name || '').toLowerCase() === n);
+  if (w !== -1) return `${name} is on the waitlist — spot W${w + 1}`;
+  return `${name} is in!`;
+}
+
 // Log an activity
 async function logActivity(gameId, action, playerName, actorName, isAdmin) {
   try {
@@ -549,6 +597,7 @@ let gamesData = {};
 
 async function loadGames() {
   const container = document.getElementById('games-container');
+  myNameSet = myNames();
 
   try {
     let gamesParam = 'order=game_date.asc,game_time.asc';
@@ -637,7 +686,7 @@ async function loadGames() {
         html += `<div class="edit-form" id="edit-form-${game.id}" style="display:none;">
           <div class="form-group">
             <label>Label</label>
-            <input type="text" id="edit-label-${game.id}" value="${escAttr(game.label)}">
+            <input type="text" id="edit-label-${game.id}" value="${escAttrHtml(game.label)}">
           </div>
           <div class="form-group">
             <label>Date</label>
@@ -770,10 +819,11 @@ async function unarchiveGame(gameId) {
 
 function playerRow(num, player, gameId) {
   const safeName = escAttr(player.player_name);
-  return `<div class="player-row" onclick="removePlayer('${gameId}','${safeName}')">
+  const isMe = myNameSet.has((player.player_name || '').toLowerCase());
+  return `<div class="player-row${isMe ? ' me' : ''}">
     <span class="player-num">${num}</span>
-    <span class="player-name">${esc(player.player_name)}</span>
-    <span class="player-x">&times;</span>
+    <span class="player-name">${esc(player.player_name)}${isMe ? ' <span class="you-tag">you</span>' : ''}</span>
+    <span class="player-x" onclick="removePlayer('${gameId}','${safeName}')">&times;</span>
   </div>`;
 }
 
@@ -781,6 +831,8 @@ async function signup(gameId) {
   const input = document.getElementById(`name-${gameId}`);
   const name = input.value.trim();
   if (!name) { input.focus(); return; }
+  const btn = input.closest('.signup-row') && input.closest('.signup-row').querySelector('.btn-join');
+  if (btn) btn.disabled = true;
 
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/signups`, {
@@ -796,12 +848,15 @@ async function signup(gameId) {
       }
       return;
     }
-    await logActivity(gameId, 'signup', name, name, !!adminPass);
+    logActivity(gameId, 'signup', name, name, !!adminPass); // best-effort, off the critical path
+    rememberMyName(name);
     input.value = '';
-    toast(`${name} is in!`);
-    loadGames();
+    await loadGames();
+    toast(signupMessage(gameId, name));
   } catch (e) {
     toast('Error signing up');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -823,13 +878,13 @@ async function removePlayer(gameId, playerName) {
   try {
     if (adminPass) {
       await rpc('admin_remove_signup', { pass: adminPass, p_game_id: gameId, p_player_name: playerName });
-      await logActivity(gameId, 'admin_remove', playerName, actorName, true);
+      logActivity(gameId, 'admin_remove', playerName, actorName, true); // best-effort
     } else {
       await fetch(
         `${SUPABASE_URL}/rest/v1/signups?game_id=eq.${gameId}&player_name=eq.${encodeURIComponent(playerName)}`,
         { method: 'DELETE', headers: headers() }
       );
-      await logActivity(gameId, 'remove', playerName, actorName, false);
+      logActivity(gameId, 'remove', playerName, actorName, false); // best-effort
     }
     toast(`${playerName} removed`);
     loadGames();
@@ -1047,9 +1102,23 @@ async function addAdmin() {
   } catch (e) { toast('Error adding admin'); }
 }
 
-// Default date
+// Default date (LOCAL calendar date, not UTC)
 const dateInput = document.getElementById('game-date');
-if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
+if (dateInput) {
+  const now = new Date();
+  dateInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+// Refresh the roster when the tab regains focus — but never wipe an in-progress signup
+function refreshIfIdle() {
+  const ae = document.activeElement;
+  if (ae && ae.tagName === 'INPUT') return;
+  const typing = Array.from(document.querySelectorAll('input[id^="name-"]')).some(i => i.value.trim());
+  if (typing) return;
+  loadGames();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshIfIdle(); });
+window.addEventListener('focus', refreshIfIdle);
 
 // Restore admin session if saved
 const savedAdmin = localStorage.getItem('frisbee_admin');
