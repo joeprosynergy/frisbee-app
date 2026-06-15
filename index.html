@@ -1216,7 +1216,7 @@ async function addAdmin() {
 }
 
 // ---- Push notifications (PWA) ----
-const VAPID_PUBLIC_KEY = 'BPX4ioACwG8-5OgIpD3_hevvsCQhf5n64V58Uh9V1ze3jRXlnguJBP7Dpnv8db4Qp_vqInNrPi9zat6K0KHCQCo';
+const VAPID_PUBLIC_KEY = 'BF6KthGI3ivHVQ7hTFuEmeN8aNA5WzQt7e_bMWxYyhndFqZIqHCk0WhrgkVtznzVw_lCO6C7Labk1d1abs-0WKE';
 let swReg = null;
 
 function urlB64ToUint8Array(base64String) {
@@ -1270,27 +1270,42 @@ async function toggleNotify() {
     toast('On iPhone: tap Share → Add to Home Screen first, then open it and turn alerts on.', 6000);
     return;
   }
+  const btn = document.getElementById('notify-btn');
+  if (btn) btn.disabled = true;
   try {
-    if (!swReg) swReg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.register('/sw.js');
+    swReg = await navigator.serviceWorker.ready; // wait for the SW to be ACTIVE before subscribing
     const existing = await swReg.pushManager.getSubscription();
     if (existing) {
       const endpoint = existing.endpoint;
       await existing.unsubscribe();
       await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, { method: 'DELETE', headers: headers() });
-      toast('Alerts off');
+      toast('Alerts turned off');
       await refreshNotifyState();
       return;
     }
     const perm = await Notification.requestPermission();
-    if (perm !== 'granted') { toast('Notifications not allowed'); await refreshNotifyState(); return; }
+    if (perm !== 'granted') {
+      toast(perm === 'denied' ? 'Notifications are blocked — enable them in settings' : 'Notifications not allowed');
+      await refreshNotifyState();
+      return;
+    }
     const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY) });
     const j = sub.toJSON();
     const res = await insert('push_subscriptions', { endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent });
-    if (res.ok || res.status === 201 || res.status === 409) toast("You'll get game alerts 🔔");
-    else toast('Could not enable alerts');
+    if (res.ok || res.status === 201 || res.status === 409) {
+      toast("Done — you'll get game alerts on this device 🔔", 4000);
+    } else {
+      const t = await res.text().catch(() => '');
+      console.error('subscription save failed', res.status, t);
+      toast('Could not save your subscription. Try again.');
+    }
     await refreshNotifyState();
   } catch (e) {
-    toast('Could not enable alerts');
+    console.error('enable push failed', e);
+    toast('Could not enable alerts: ' + ((e && e.message) || 'unknown error'), 5000);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
