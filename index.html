@@ -5,6 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Game Roster</title>
   <meta name="theme-color" content="#1976d2">
+  <!-- Warm the Supabase connection in parallel with the page download. Cold revisits were slow
+       because the browser handshakes Vercel for the HTML, THEN handshakes Supabase for the data. -->
+  <link rel="preconnect" href="https://yogymlpqgqjqragrxqgf.supabase.co" crossorigin>
+  <link rel="dns-prefetch" href="https://yogymlpqgqjqragrxqgf.supabase.co">
+  <script>
+  // Fire the games fetch from the <head> so it overlaps the HTML download — the roster then
+  // paints the instant the main script runs, instead of after a second cold round-trip.
+  (function () {
+    try {
+      var U = 'https://yogymlpqgqjqragrxqgf.supabase.co';
+      var K = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvZ3ltbHBxZ3FqcXJhZ3J4cWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyOTg1ODAsImV4cCI6MjA4ODg3NDU4MH0.6D8B_jK-tLi2g32xNTxkJwQGbJLW798ufCt869rPZgw';
+      var admin = false;
+      try { admin = !!localStorage.getItem('frisbee_admin'); } catch (e) {}
+      var params = 'select=*,signups(id,player_name,created_at)&order=game_date.asc,game_time.asc&signups.order=created_at.asc'
+        + (admin ? '&status=in.(draft,live)' : '&status=eq.live');
+      window.__egrPrefetch = {
+        params: params,
+        promise: fetch(U + '/rest/v1/games?' + params, { headers: { apikey: K, Authorization: 'Bearer ' + K } })
+          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      };
+    } catch (e) {}
+  })();
+  </script>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="icon" href="/icon-192.png">
@@ -843,7 +866,23 @@ async function loadGames() {
     // One round-trip: games WITH their signups embedded (halves the mobile latency)
     let gamesParam = 'select=*,signups(id,player_name,created_at)&order=game_date.asc,game_time.asc&signups.order=created_at.asc';
     gamesParam += adminPass ? '&status=in.(draft,live)' : '&status=eq.live';
-    const games = await query('games', gamesParam);
+    // On the first load, reuse the request the <head> already fired (overlaps the HTML download).
+    // Falls back to a fresh query if it's missing, mismatched, errors, or stalls past 8s.
+    let games;
+    const pf = window.__egrPrefetch;
+    if (pf && pf.params === gamesParam && !pf.used) {
+      pf.used = true;
+      try {
+        games = await Promise.race([
+          pf.promise,
+          new Promise((_, rej) => setTimeout(() => rej(new Error('prefetch timeout')), 8000))
+        ]);
+      } catch (e) {
+        games = await query('games', gamesParam);
+      }
+    } else {
+      games = await query('games', gamesParam);
+    }
     if (!games.length) {
       container.innerHTML = '<div class="empty-state">No games scheduled yet.</div>';
       return;
