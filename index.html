@@ -385,6 +385,31 @@
       margin-top: 10px;
     }
     .btn-copy:active { background: #f5f5f5; }
+    /* Attention-grabbing "Copy last week" button: a gradient border that flows around it + a soft pulsing glow */
+    @property --egr-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+    .glow-btn {
+      display: block;
+      width: 100%;
+      border: 2px solid transparent;
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #1565c0;
+      cursor: pointer;
+      -webkit-appearance: none;
+      background:
+        linear-gradient(#fff, #fff) padding-box,
+        conic-gradient(from var(--egr-angle, 0deg), #1976d2, #26c6da, #7e57c2, #29b6f6, #1976d2) border-box;
+      animation: egr-glow-spin 4s linear infinite, egr-glow-pulse 2.8s ease-in-out infinite;
+    }
+    .glow-btn:active { transform: scale(0.99); }
+    @keyframes egr-glow-spin { to { --egr-angle: 360deg; } }
+    @keyframes egr-glow-pulse {
+      0%, 100% { box-shadow: 0 0 7px rgba(38,198,218,0.35), 0 0 14px rgba(25,118,210,0.22); }
+      50%      { box-shadow: 0 0 13px rgba(38,198,218,0.60), 0 0 24px rgba(25,118,210,0.40); }
+    }
+    @media (prefers-reduced-motion: reduce) { .glow-btn { animation: none; } }
     .card.archived-card { opacity: 0.5; }
     .archived-badge {
       display: inline-block;
@@ -583,6 +608,12 @@
     body.dark .copy-option:active { background: #20224a; }
     body.dark .copy-option-main { color: #ececf7; }
     body.dark .copy-option-sub { color: #9a9cc8; }
+    body.dark .glow-btn {
+      color: #bcd3ff;
+      background:
+        linear-gradient(#20224a, #20224a) padding-box,
+        conic-gradient(from var(--egr-angle, 0deg), #5b8cff, #26c6da, #b388ff, #5b8cff) border-box;
+    }
     body.dark .btn-notify { background: #20224a; border-color: #5b8cff; color: #8ab0ff; }
     body.dark .btn-notify.on { background: #1c2f5e; }
     body.dark .you-tag { background: #1c2f5e; color: #8ab0ff; }
@@ -666,7 +697,7 @@
   <div id="admin-tools" style="display:none;">
     <div class="card">
       <h2>Create Game</h2>
-      <button class="btn-copy" style="margin:0 0 12px;width:100%;" onclick="openCopyPicker()">&#8635; Copy last week</button>
+      <button class="glow-btn" style="margin:0 0 12px;" onclick="openCopyPicker()">&#8635; Copy last week</button>
       <div class="form-group">
         <label>Date</label>
         <input type="date" id="game-date">
