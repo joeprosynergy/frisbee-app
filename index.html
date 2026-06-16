@@ -646,6 +646,7 @@
   <div id="admin-tools" style="display:none;">
     <div class="card">
       <h2>Create Game</h2>
+      <button class="btn-copy" style="margin:0 0 12px;width:100%;" onclick="fillFromLastGame()">&#8635; Same as last week</button>
       <div class="form-group">
         <label>Date</label>
         <input type="date" id="game-date">
@@ -860,8 +861,6 @@ const byCreated = (a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b
 
 async function loadGames() {
   const container = document.getElementById('games-container');
-  myNameSet = myNames();
-
   try {
     // One round-trip: games WITH their signups embedded (halves the mobile latency)
     let gamesParam = 'select=*,signups(id,player_name,created_at)&order=game_date.asc,game_time.asc&signups.order=created_at.asc';
@@ -883,16 +882,33 @@ async function loadGames() {
     } else {
       games = await query('games', gamesParam);
     }
-    if (!games.length) {
-      container.innerHTML = '<div class="empty-state">No games scheduled yet.</div>';
-      return;
+    renderGames(games);
+    // Save the rendered roster so the next open paints instantly (player view only).
+    // The head-fired fetch still runs and overwrites this — no extra request, no delay.
+    if (!adminPass) {
+      try { localStorage.setItem('egr_snapshot', JSON.stringify({ ts: Date.now(), games })); } catch (e) {}
     }
+  } catch (e) {
+    container.innerHTML = '<div class="empty-state">Couldn\'t load &mdash; your connection may be slow.<br><button class="btn-copy" style="margin-top:12px;" onclick="loadGames()">Retry</button></div>';
+    console.error(e);
+  }
+}
 
-    // Cache labels
-    for (const g of games) { gameLabels[g.id] = g.label; }
+function renderGames(games) {
+  const container = document.getElementById('games-container');
+  myNameSet = myNames();
+  const archiveSection = document.getElementById('archive-section');
+  if (!games || !games.length) {
+    container.innerHTML = '<div class="empty-state">No games scheduled yet.</div>';
+    if (archiveSection) archiveSection.style.display = adminPass ? 'block' : 'none';
+    return;
+  }
 
-    let html = '';
-    for (const game of games) {
+  // Cache labels
+  for (const g of games) { gameLabels[g.id] = g.label; }
+
+  let html = '';
+  for (const game of games) {
       const players = (game.signups || []).slice().sort(byCreated);
       const roster = players.slice(0, game.max_players);
       const waitlist = players.slice(game.max_players);
@@ -977,19 +993,8 @@ async function loadGames() {
       html += `</div>`;
     }
 
-    container.innerHTML = html;
-
-    // Show/hide archive section for admins
-    const archiveSection = document.getElementById('archive-section');
-    if (adminPass) {
-      archiveSection.style.display = 'block';
-    } else {
-      archiveSection.style.display = 'none';
-    }
-  } catch (e) {
-    container.innerHTML = '<div class="empty-state">Couldn\'t load &mdash; your connection may be slow.<br><button class="btn-copy" style="margin-top:12px;" onclick="loadGames()">Retry</button></div>';
-    console.error(e);
-  }
+  container.innerHTML = html;
+  if (archiveSection) archiveSection.style.display = adminPass ? 'block' : 'none';
 }
 
 function toggleArchives() {
@@ -1315,6 +1320,27 @@ async function createGame() {
     document.getElementById('game-label').value = '';
     loadGames();
   } catch (e) { toast('Error creating game'); }
+}
+
+// Pre-fill the Create Game form from the most recent game (any status, incl. archived),
+// bumping the date forward a week to the same weekday. Saves re-typing the weekly game
+// even after it has auto-archived and dropped out of the visible list.
+async function fillFromLastGame() {
+  try {
+    const rows = await query('games', 'select=label,game_time,max_players,game_date&order=game_date.desc,game_time.desc&limit=1');
+    if (!rows || !rows.length) { toast('No previous game to copy yet'); return; }
+    const g = rows[0];
+    const last = new Date(g.game_date + 'T00:00:00');
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const next = new Date(last); next.setDate(next.getDate() + 7);
+    while (next < today) next.setDate(next.getDate() + 7); // skipped weeks → roll forward, same weekday
+    const iso = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+    document.getElementById('game-date').value = iso;
+    document.getElementById('game-time').value = (g.game_time || '18:15').slice(0, 5);
+    document.getElementById('game-label').value = g.label || '';
+    document.getElementById('game-max').value = g.max_players || 18;
+    toast(`Copied "${g.label}" → ${formatDate(iso)}. Check it, then Create Game.`, 4000);
+  } catch (e) { toast('Couldn\'t load the last game'); }
 }
 
 function copyList(gameId) {
@@ -1674,6 +1700,14 @@ const savedAdmin = localStorage.getItem('frisbee_admin');
 if (savedAdmin) {
   loginAdmin(savedAdmin, true);
 } else {
+  // Instant paint from the last snapshot so there's no "Loading…" flash. The head-fired
+  // fetch is already in flight and overwrites this a beat later — no extra request, no delay.
+  try {
+    const snap = JSON.parse(localStorage.getItem('egr_snapshot') || 'null');
+    if (snap && Array.isArray(snap.games) && (Date.now() - snap.ts) < 3 * 24 * 60 * 60 * 1000) {
+      renderGames(snap.games);
+    }
+  } catch (e) {}
   loadGames();
 }
 
