@@ -714,6 +714,10 @@
         <label>Max Players</label>
         <input type="number" id="game-max" value="18" min="2" max="50">
       </div>
+      <div class="form-group">
+        <label>Google Maps link (optional)</label>
+        <input type="url" id="game-maps" placeholder="Paste a Google Maps link">
+      </div>
       <div class="form-actions">
         <button class="btn btn-small" onclick="createGame()">Create Game</button>
       </div>
@@ -1044,6 +1048,10 @@ function renderGames(games) {
             <label>Max Players</label>
             <input type="number" id="edit-max-${game.id}" value="${game.max_players}" min="2" max="50">
           </div>
+          <div class="form-group">
+            <label>Google Maps link (optional)</label>
+            <input type="url" id="edit-maps-${game.id}" value="${escAttrHtml(game.maps_link || '')}" placeholder="Paste a Google Maps link">
+          </div>
           <div class="edit-form-actions">
             <button class="btn-save" onclick="saveEditGame('${game.id}')">Save</button>
             <button class="btn-cancel" onclick="toggleEditGame('${game.id}')">Cancel</button>
@@ -1372,13 +1380,15 @@ async function createGame() {
   const time = document.getElementById('game-time').value;
   const label = document.getElementById('game-label').value.trim();
   const max = parseInt(document.getElementById('game-max').value);
+  const maps = document.getElementById('game-maps').value.trim();
   if (!date || !time || !label) { toast('Fill in all fields'); return; }
 
   try {
-    const gameId = await rpc('create_game', { pass: adminPass, p_date: date, p_time: time, p_label: label, p_max_players: max });
+    const gameId = await rpc('create_game', { pass: adminPass, p_date: date, p_time: time, p_label: label, p_max_players: max, p_maps_link: maps || null });
     await logActivity(gameId, 'game_created', label, adminName, true);
     toast('Game created!');
     document.getElementById('game-label').value = '';
+    document.getElementById('game-maps').value = '';
     loadGames();
   } catch (e) { toast('Error creating game'); }
 }
@@ -1389,7 +1399,7 @@ let copyCandidates = [];
 
 async function openCopyPicker() {
   try {
-    const recent = await query('games', 'select=label,game_time,max_players,game_date&order=game_date.desc,game_time.desc&limit=12');
+    const recent = await query('games', 'select=label,game_time,max_players,game_date,maps_link&order=game_date.desc,game_time.desc&limit=12');
     if (!recent || !recent.length) { toast('No previous game to copy yet'); return; }
     // Show games from roughly the last couple of weeks; if there's been a long gap,
     // still offer the most recent one so the button always does something.
@@ -1424,6 +1434,7 @@ function pickCopyGame(i) {
   document.getElementById('game-time').value = (g.game_time || '18:15').slice(0, 5);
   document.getElementById('game-label').value = g.label || '';
   document.getElementById('game-max').value = g.max_players || 18;
+  document.getElementById('game-maps').value = g.maps_link || '';
   closeCopyModal();
   toast(`Copied "${g.label}" → ${formatDate(iso)}. Check it, then Create Game.`, 4000);
 }
@@ -1433,7 +1444,9 @@ function copyList(gameId) {
   if (!d) return;
   const { game, roster, waitlist } = d;
   const notice = 'DO NOT COPY THIS MESSAGE, USE THIS LINK FOR SIGNUP!\neasygameroster.com';
-  let text = `${notice}\n\n${game.label} — ${formatDate(game.game_date)}, ${formatTime(game.game_time)}\n\n`;
+  let text = `${notice}\n\n${game.label} — ${formatDate(game.game_date)}, ${formatTime(game.game_time)}\n`;
+  if (game.maps_link) text += `\u{1F4CD} ${game.maps_link}\n`;
+  text += `\n`;
   roster.forEach((p, i) => {
     text += `${i + 1}. ${p.player_name}\n`;
   });
@@ -1457,10 +1470,11 @@ async function saveEditGame(gameId) {
   const date = document.getElementById(`edit-date-${gameId}`).value;
   const time = document.getElementById(`edit-time-${gameId}`).value;
   const max = parseInt(document.getElementById(`edit-max-${gameId}`).value);
+  const maps = document.getElementById(`edit-maps-${gameId}`).value.trim();
   if (!label || !date || !time) { toast('Fill in all fields'); return; }
 
   try {
-    await rpc('update_game', { pass: adminPass, p_game_id: gameId, p_date: date, p_time: time, p_label: label, p_max_players: max });
+    await rpc('update_game', { pass: adminPass, p_game_id: gameId, p_date: date, p_time: time, p_label: label, p_max_players: max, p_maps_link: maps || null });
     toast('Game updated');
     loadGames();
   } catch (e) { toast('Error updating game'); }
