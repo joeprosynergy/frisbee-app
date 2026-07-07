@@ -221,6 +221,9 @@
       margin-top: 6px;
       text-align: center;
     }
+    .field-hint { font-size: 0.75rem; color: #999; margin-top: 4px; line-height: 1.4; }
+    .field-hint strong { color: #777; font-weight: 600; }
+    .card-intro { font-size: 0.82rem; color: #888; margin: -4px 0 14px; line-height: 1.45; }
 
     /* Activity log */
     .log-section { margin-top: 24px; }
@@ -597,6 +600,9 @@
     body.dark .btn-join { background: #4d7cff; box-shadow: 0 2px 12px rgba(77,124,255,0.4); }
     body.dark .btn-join:active { background: #3f6ae0; }
     body.dark .signup-hint, body.dark .notify-hint { color: #7e80b0; }
+    body.dark .field-hint { color: #8688b8; }
+    body.dark .field-hint strong { color: #a6a8d4; }
+    body.dark .card-intro { color: #8688b8; }
     body.dark .empty-state { color: #8385b8; }
     body.dark .log-toggle, body.dark .archive-toggle { color: #8385b8; }
     body.dark .log-entry { border-bottom-color: #2a2c57; color: #a6a8d4; }
@@ -738,28 +744,33 @@
   <div id="admin-tools" style="display:none;">
     <div class="card">
       <h2>Roster settings</h2>
+      <p class="card-intro">Controls how your roster looks at the top of the page and how people find it.</p>
       <div class="form-group">
         <label>Name</label>
         <input type="text" id="org-name-input" placeholder="Roster name">
+        <div class="field-hint">The big title at the top of your roster &mdash; usually your team, group, or league name.</div>
       </div>
       <div class="form-group">
         <label>Subtitle</label>
         <input type="text" id="org-subtitle-input" placeholder="Shown under the name">
+        <div class="field-hint">A small line under the name. Optional &mdash; leave it blank to hide it.</div>
       </div>
       <div class="form-group">
         <label>Signup message (optional)</label>
         <input type="text" id="org-notice-input" placeholder="Shown at the top of a copied list">
+        <div class="field-hint">The note that appears at the top and bottom of the list when someone taps <strong>Copy</strong> to paste it into WhatsApp. Leave blank to use the standard &ldquo;sign up here&rdquo; message.</div>
       </div>
       <div class="form-actions">
         <button class="btn btn-small" onclick="saveOrgBranding()">Save settings</button>
       </div>
-      <div style="margin-top:14px;">
+      <div style="margin-top:18px;">
         <div class="form-group">
           <label>Share link</label>
           <div class="share-row">
             <input type="text" id="org-share-link" readonly onclick="this.select()">
             <button class="btn-copy" style="margin-top:0;" onclick="copyShareLink()">Copy</button>
           </div>
+          <div class="field-hint"><strong>This is the one you'll use.</strong> Send it to your players (WhatsApp, text, email). They open it and sign up right in their browser &mdash; nothing to install.</div>
         </div>
         <div class="form-group">
           <label>Invite code</label>
@@ -767,6 +778,7 @@
             <input type="text" id="org-invite-code" readonly onclick="this.select()">
             <button class="btn-copy" style="margin-top:0;" onclick="copyInviteCode()">Copy</button>
           </div>
+          <div class="field-hint">Only needed by people who installed this as an app and want <em>your</em> roster added to it. In the app they tap <strong>&ldquo;Add a roster&rdquo;</strong> and type this code. (On iPhone a tapped link won't open the installed app, so the code is the way in.) Most people never need this &mdash; just send them the share link.</div>
         </div>
       </div>
     </div>
@@ -785,14 +797,17 @@
       <div class="form-group">
         <label>Label</label>
         <input type="text" id="game-label" placeholder='e.g. "6:15pm Game"'>
+        <div class="field-hint">How this game is titled in the list, e.g. &ldquo;6:15pm Game&rdquo; or &ldquo;Sunday Pickup&rdquo;.</div>
       </div>
       <div class="form-group">
         <label>Max Players</label>
         <input type="number" id="game-max" value="18" min="2" max="50">
+        <div class="field-hint">How many spots are on the roster. Anyone who signs up after it's full goes on the waitlist.</div>
       </div>
       <div class="form-group">
         <label>Google Maps link (optional)</label>
         <input type="url" id="game-maps" placeholder="Paste a Google Maps link">
+        <div class="field-hint">Adds a &#128205; Location link to the game and into the copied message. Paste a Google Maps share link, or leave blank.</div>
       </div>
       <div class="form-actions">
         <button class="btn btn-small" onclick="createGame()">Create Game</button>
@@ -801,13 +816,16 @@
 
     <div class="card">
       <h2>Add Admin</h2>
+      <p class="card-intro">Give someone else admin access to this roster, so they can create and manage games too.</p>
       <div class="form-group">
         <label>Name</label>
         <input type="text" id="new-admin-name" placeholder="Admin name">
+        <div class="field-hint">Just a label so you know who this login belongs to.</div>
       </div>
       <div class="form-group">
         <label>Passphrase</label>
         <input type="text" id="new-admin-pass" placeholder="Their passphrase">
+        <div class="field-hint">The password they'll type to log in here as admin. Pick one and share it with them &mdash; they enter it under <strong>Admin</strong>.</div>
       </div>
       <div class="form-actions">
         <button class="btn btn-small" onclick="addAdmin()">Add Admin</button>
@@ -850,6 +868,7 @@
     <div class="form-group">
       <label>Invite code</label>
       <input type="text" id="add-roster-code" placeholder="e.g. ABC-1234XY" autocapitalize="characters" onkeydown="if(event.key==='Enter')confirmAddRoster()">
+      <div class="field-hint">Ask the roster's organizer for their invite code &mdash; they'll find it in their Roster settings. This adds their games alongside yours in this app.</div>
     </div>
     <div id="add-roster-msg" style="display:none;color:#e53935;font-size:0.82rem;margin-top:8px;"></div>
     <div class="modal-actions">
