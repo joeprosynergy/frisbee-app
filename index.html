@@ -112,6 +112,8 @@
     }
     .game-label { font-weight: 700; font-size: 1.15rem; }
     .game-meta { color: #666; font-size: 0.85rem; margin-top: 2px; }
+    .game-location { display: inline-block; color: #2f6fdb; font-size: 0.85rem; margin-top: 4px; text-decoration: none; }
+    .game-location:active { opacity: 0.7; }
     .spots-badge {
       font-size: 0.8rem;
       padding: 5px 12px;
@@ -565,6 +567,7 @@
     }
     body.dark .game-label { color: #f3f3fb; }
     body.dark .game-meta { color: #a6a8d4; }
+    body.dark .game-location { color: #8fb5f5; }
     body.dark .roster-title { color: #8385b8; }
     body.dark .player-num { color: #6f72a6; }
     body.dark .player-row { border-bottom-color: #2a2c57; }
@@ -985,6 +988,7 @@ function renderGames(games) {
           <div>
             <div class="game-label">${esc(game.label)}${isDraft ? '<span class="draft-badge">Draft</span>' : ''}</div>
             <div class="game-meta">${formatDate(game.game_date)} &middot; ${formatTime(game.game_time)}</div>
+            ${/^https?:\/\//i.test(game.maps_link || '') ? `<a class="game-location" href="${escAttrHtml(game.maps_link)}" target="_blank" rel="noopener">&#128205; Location</a>` : ''}
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
             ${players.length ? `<button class="btn-copy" onclick="event.stopPropagation();copyList('${game.id}')">Copy</button>` : ''}
