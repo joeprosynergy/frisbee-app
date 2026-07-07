@@ -16,14 +16,22 @@
     try {
       var U = 'https://yogymlpqgqjqragrxqgf.supabase.co';
       var K = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvZ3ltbHBxZ3FqcXJhZ3J4cWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyOTg1ODAsImV4cCI6MjA4ODg3NDU4MH0.6D8B_jK-tLi2g32xNTxkJwQGbJLW798ufCt869rPZgw';
-      var admin = false;
-      try { admin = !!localStorage.getItem('frisbee_admin'); } catch (e) {}
-      var params = 'select=*,signups(id,player_name,created_at)&order=game_date.asc,game_time.asc&signups.order=created_at.asc'
-        + (admin ? '&status=in.(draft,live)' : '&status=eq.live');
+      // Multi-org: the org is derived server-side from the token in the URL (#/<token>).
+      // No token → p_token:null → server returns the DEFAULT org (frisbee).
+      var m = location.hash.match(/^#\/([A-Za-z0-9_-]{16,})/);
+      var token = m ? m[1] : null;
+      var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+      var orgs = [];
+      try { orgs = JSON.parse(localStorage.getItem('egr_orgs') || '[]'); } catch (e) {}
+      // The installed multi-roster hub (>=2 joined orgs, no token) has no single org to prefetch.
+      if (standalone && orgs.length >= 2 && !token) return;
       window.__egrPrefetch = {
-        params: params,
-        promise: fetch(U + '/rest/v1/games?' + params, { headers: { apikey: K, Authorization: 'Bearer ' + K } })
-          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        token: token,
+        promise: fetch(U + '/rest/v1/rpc/get_org_state', {
+          method: 'POST',
+          headers: { apikey: K, Authorization: 'Bearer ' + K, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_token: token, p_pass: null })
+        }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       };
     } catch (e) {}
   })();
@@ -634,6 +642,30 @@
     body.dark .btn-edit, body.dark .btn-save, body.dark .btn-unarchive { background: #4d7cff; }
     body.dark .btn-publish { background: #2e9e5b; }
     body.dark .btn-danger { background: #e0494c; }
+
+    /* ---------- Multi-org additions ---------- */
+    #add-roster-btn { left: 0; font-size: 1.5rem; }
+    .org-group-header { display: flex; align-items: center; justify-content: space-between; margin: 22px 0 10px; }
+    .org-group-title { font-size: 1.15rem; font-weight: 700; }
+    .org-open-btn {
+      background: none; border: 1px solid #e0e0e0; border-radius: 16px;
+      padding: 5px 12px; font-size: 0.8rem; color: #1976d2; cursor: pointer; -webkit-appearance: none;
+    }
+    .org-open-btn:active { background: #f0f0f0; }
+    .invite-card { text-align: center; }
+    .invite-card > div:first-child { font-weight: 700; }
+    .invite-code-big {
+      font-size: 1.7rem; font-weight: 800; letter-spacing: 2px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #1976d2; padding: 6px 0;
+    }
+    .invite-steps { margin: 12px auto 0; max-width: 240px; text-align: left; font-size: 0.82rem; color: #666; line-height: 1.7; padding-left: 18px; }
+    .share-row { display: flex; gap: 8px; align-items: center; }
+    .share-row input { flex: 1; }
+    body.dark .org-group-title, body.dark .invite-card > div:first-child { color: #f3f3fb; }
+    body.dark .org-open-btn { background: #20224a; border-color: #383b6e; color: #8ab0ff; }
+    body.dark .org-open-btn:active { background: #2a2c57; }
+    body.dark .invite-code-big { color: #8ab0ff; }
+    body.dark .invite-steps { color: #a6a8d4; }
   </style>
 </head>
 <body>
@@ -651,6 +683,7 @@
   <h1>Game Roster</h1>
   <button class="hdr-btn" id="theme-btn" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Dark / light">&#9790;</button>
   <button class="hdr-btn refresh-btn" id="refresh-btn" onclick="manualRefresh()" aria-label="Refresh" title="Refresh">&#8635;</button>
+  <button class="hdr-btn" id="add-roster-btn" onclick="openAddRoster()" aria-label="Add a roster" title="Add a roster" style="display:none;">+</button>
 </div>
 <p class="subtitle">Type a name, tap "I'm in."</p>
 
@@ -658,6 +691,11 @@
   <button class="btn-notify" id="notify-btn" onclick="toggleNotify()">&#128276; Get game alerts</button>
   <div class="notify-hint" id="notify-hint"></div>
 </div>
+
+<!-- "Add this roster to your rosters" banner (branded token link, org not yet joined) -->
+<div id="add-banner" class="install-banner" style="display:none;"></div>
+<!-- iOS invite-code helper card (branded org, Safari, not installed) -->
+<div id="invite-helper" style="display:none;"></div>
 
 <div id="games-container">
   <div class="empty-state">Loading...</div>
@@ -698,6 +736,41 @@
   </div>
 
   <div id="admin-tools" style="display:none;">
+    <div class="card">
+      <h2>Roster settings</h2>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="org-name-input" placeholder="Roster name">
+      </div>
+      <div class="form-group">
+        <label>Subtitle</label>
+        <input type="text" id="org-subtitle-input" placeholder="Shown under the name">
+      </div>
+      <div class="form-group">
+        <label>Signup message (optional)</label>
+        <input type="text" id="org-notice-input" placeholder="Shown at the top of a copied list">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-small" onclick="saveOrgBranding()">Save settings</button>
+      </div>
+      <div style="margin-top:14px;">
+        <div class="form-group">
+          <label>Share link</label>
+          <div class="share-row">
+            <input type="text" id="org-share-link" readonly onclick="this.select()">
+            <button class="btn-copy" style="margin-top:0;" onclick="copyShareLink()">Copy</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Invite code</label>
+          <div class="share-row">
+            <input type="text" id="org-invite-code" readonly onclick="this.select()">
+            <button class="btn-copy" style="margin-top:0;" onclick="copyInviteCode()">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Create Game</h2>
       <button class="glow-btn" style="margin:0 0 12px;" onclick="openCopyPicker()">&#8635; Copy last week</button>
@@ -771,13 +844,35 @@
   </div>
 </div>
 
+<div id="add-roster-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeAddRoster()">
+  <div class="modal">
+    <div class="modal-title">Add a roster</div>
+    <div class="form-group">
+      <label>Invite code</label>
+      <input type="text" id="add-roster-code" placeholder="e.g. ABC-1234XY" autocapitalize="characters" onkeydown="if(event.key==='Enter')confirmAddRoster()">
+    </div>
+    <div id="add-roster-msg" style="display:none;color:#e53935;font-size:0.82rem;margin-top:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAddRoster()">Cancel</button>
+      <button class="btn-save" onclick="confirmAddRoster()">Add</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const SUPABASE_URL = 'https://yogymlpqgqjqragrxqgf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvZ3ltbHBxZ3FqcXJhZ3J4cWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyOTg1ODAsImV4cCI6MjA4ODg3NDU4MH0.6D8B_jK-tLi2g32xNTxkJwQGbJLW798ufCt869rPZgw';
 
+const APP_BASE = 'easygameroster.com';
+
 let adminPass = null;
 let adminName = null;
 let logExpanded = false;
+
+// Multi-org module state
+let ORG = null;          // the current single-view org: {slug,display_name,subtitle,invite_code,signup_notice,is_default,token}
+let VIEW = 'single';     // 'single' | 'combined'
+let ROUTE_TOKEN = null;  // the token from the current URL (null = default/bare)
 
 function headers() {
   return {
@@ -807,27 +902,6 @@ async function rpc(fn, params) {
   if (!res.ok) { const err = await res.json(); throw new Error(err.message || 'Failed'); }
   if (res.status === 204) return null;
   return res.json();
-}
-
-async function query(table, params = '', attempt = 0) {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000); // never hang forever
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, { headers: headers(), signal: ctrl.signal });
-    clearTimeout(timer);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return res.json();
-  } catch (e) {
-    if (attempt < 1) return query(table, params, attempt + 1); // one quick retry on a stall/blip
-    throw e;
-  }
-}
-
-async function insert(table, data) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-    method: 'POST', headers: headers(), body: JSON.stringify(data)
-  });
-  return res;
 }
 
 function toast(msg, ms = 2500) {
@@ -907,54 +981,130 @@ function signupMessage(gameId, name) {
   return `${name} is in!`;
 }
 
-// Log an activity
-async function logActivity(gameId, action, playerName, actorName, isAdmin) {
-  try {
-    await insert('activity_log', {
-      game_id: gameId,
-      action: action,
-      player_name: playerName || null,
-      actor_name: actorName || null,
-      is_admin: isAdmin || false
-    });
-  } catch (e) {
-    console.error('Failed to log activity', e);
-  }
+// Cache game data for the copy button. (Signup/remove/admin actions are now logged
+// server-side by the RPCs, so there's no client-side activity logging any more.)
+let gamesData = {};
+let gameOrg = {};   // gameId -> its org object, so copy-links / signups route to the right org token
+const byCreated = (a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0);
+
+// ---------- Multi-org routing + state ----------
+function parseToken() {
+  const m = location.hash.match(/^#\/([A-Za-z0-9_-]{16,})/);
+  return m ? m[1] : null;
+}
+function getOrgs() {
+  try { const a = JSON.parse(localStorage.getItem('egr_orgs') || '[]'); return Array.isArray(a) ? a : []; }
+  catch (e) { return []; }
+}
+function setOrgs(a) { try { localStorage.setItem('egr_orgs', JSON.stringify(a)); } catch (e) {} }
+function resolveRoute() {
+  const token = parseToken();
+  if (token) return { view: 'single', token: token };
+  if (isStandalone() && getOrgs().length >= 2) return { view: 'combined', token: null };
+  return { view: 'single', token: null };
 }
 
-// Cache game labels and data for log display and copy
-let gameLabels = {};
-let gamesData = {};
-const byCreated = (a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0);
+// The primary read: get_org_state(p_token, p_pass) → {org, is_admin, admin_name, games}.
+// Reuses the <head> prefetch on the first player-view load when the token matches.
+async function loadState(token, pass) {
+  token = token || null;
+  const pf = window.__egrPrefetch;
+  if (pf && pf.token === token && !pf.used && !pass) {
+    pf.used = true;
+    try {
+      const r = await Promise.race([
+        pf.promise,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('prefetch timeout')), 8000))
+      ]);
+      if (r && !r.error) return r;
+    } catch (e) { /* fall through to a fresh fetch */ }
+  }
+  const r = await rpc('get_org_state', { p_token: token, p_pass: pass || null });
+  if (r && r.error) throw new Error(r.error);
+  return r;
+}
+
+// Branding: the default/bare org must stay byte-identical to today, so applyBranding
+// simply writes the org's own display_name/subtitle (default org's DB values == today's).
+function applyBranding(org) {
+  if (!org) return;
+  const title = org.display_name || 'Game Roster';
+  document.title = title;
+  const h1 = document.querySelector('.app-header h1');
+  if (h1) h1.textContent = title;
+  const sub = document.querySelector('.subtitle');
+  if (sub) sub.textContent = org.subtitle || '';
+}
+function cacheBranding(org, routeToken) {
+  try {
+    localStorage.setItem('egr_org_' + (routeToken || 'default'), JSON.stringify({
+      display_name: org.display_name, subtitle: org.subtitle, is_default: org.is_default,
+      slug: org.slug, invite_code: org.invite_code, token: org.token
+    }));
+  } catch (e) {}
+}
+function readBranding(token) {
+  try { return JSON.parse(localStorage.getItem('egr_org_' + (token || 'default')) || 'null'); }
+  catch (e) { return null; }
+}
+function paintCachedBranding(token) { const c = readBranding(token); if (c) applyBranding(c); }
+function snapLabelFromCache(token) {
+  if (!token) return 'default';
+  const c = readBranding(token);
+  if (c) return c.is_default ? 'default' : (c.slug || token);
+  return token;
+}
+function paintSnapshot(token) {
+  try {
+    const label = snapLabelFromCache(token);
+    let snap = JSON.parse(localStorage.getItem('egr_snapshot_' + label) || 'null');
+    if (!snap && label === 'default') snap = JSON.parse(localStorage.getItem('egr_snapshot') || 'null'); // legacy key
+    if (snap && Array.isArray(snap.games) && (Date.now() - snap.ts) < 3 * 24 * 60 * 60 * 1000) renderGames(snap.games);
+  } catch (e) {}
+}
+
+// Per-org admin passphrase storage (migrates the legacy single-org key).
+function migrateLegacyAdmin() {
+  try {
+    const legacy = localStorage.getItem('frisbee_admin');
+    if (legacy && !localStorage.getItem('egr_admin_frisbee')) localStorage.setItem('egr_admin_frisbee', legacy);
+  } catch (e) {}
+}
+function storedPass(slug, isDefault) {
+  try {
+    let p = slug ? localStorage.getItem('egr_admin_' + slug) : null;
+    if (!p && isDefault) p = localStorage.getItem('egr_admin_frisbee') || localStorage.getItem('frisbee_admin');
+    return p || null;
+  } catch (e) { return null; }
+}
+function setStoredPass(slug, pass) { try { if (slug) localStorage.setItem('egr_admin_' + slug, pass); } catch (e) {} }
+function clearStoredPass(slug, isDefault) {
+  try {
+    if (slug) localStorage.removeItem('egr_admin_' + slug);
+    if (isDefault) { localStorage.removeItem('egr_admin_frisbee'); localStorage.removeItem('frisbee_admin'); }
+  } catch (e) {}
+}
+function refreshCurrentView() { return VIEW === 'combined' ? bootCombined() : loadGames(); }
 
 async function loadGames() {
   const container = document.getElementById('games-container');
   try {
-    // One round-trip: games WITH their signups embedded (halves the mobile latency)
-    let gamesParam = 'select=*,signups(id,player_name,created_at)&order=game_date.asc,game_time.asc&signups.order=created_at.asc';
-    gamesParam += adminPass ? '&status=in.(draft,live)' : '&status=eq.live';
-    // On the first load, reuse the request the <head> already fired (overlaps the HTML download).
-    // Falls back to a fresh query if it's missing, mismatched, errors, or stalls past 8s.
-    let games;
-    const pf = window.__egrPrefetch;
-    if (pf && pf.params === gamesParam && !pf.used) {
-      pf.used = true;
-      try {
-        games = await Promise.race([
-          pf.promise,
-          new Promise((_, rej) => setTimeout(() => rej(new Error('prefetch timeout')), 8000))
-        ]);
-      } catch (e) {
-        games = await query('games', gamesParam);
-      }
-    } else {
-      games = await query('games', gamesParam);
-    }
+    const state = await loadState(ORG && ORG.token, adminPass);
+    ORG = state.org;                       // full org object, incl. its share token
+    if (state.admin_name) adminName = state.admin_name;
+    applyBranding(ORG);
+    cacheBranding(ORG, ROUTE_TOKEN);
+    // Seed the local roster list with the first org this device ever opens (migrates
+    // existing single-org users). Only when empty — a 2nd org is added explicitly.
+    if (getOrgs().length === 0) setOrgs([{ token: ORG.token, display_name: ORG.display_name }]);
+    const games = state.games || [];
     renderGames(games);
     // Save the rendered roster so the next open paints instantly (player view only).
-    // The head-fired fetch still runs and overwrites this — no extra request, no delay.
     if (!adminPass) {
-      try { localStorage.setItem('egr_snapshot', JSON.stringify({ ts: Date.now(), games })); } catch (e) {}
+      try {
+        const label = ORG.is_default ? 'default' : ORG.slug;
+        localStorage.setItem('egr_snapshot_' + label, JSON.stringify({ ts: Date.now(), games }));
+      } catch (e) {}
     }
   } catch (e) {
     container.innerHTML = '<div class="empty-state">Couldn\'t load &mdash; your connection may be slow.<br><button class="btn-copy" style="margin-top:12px;" onclick="loadGames()">Retry</button></div>';
@@ -962,28 +1112,21 @@ async function loadGames() {
   }
 }
 
-function renderGames(games) {
-  const container = document.getElementById('games-container');
-  myNameSet = myNames();
-  const archiveSection = document.getElementById('archive-section');
-  if (!games || !games.length) {
-    container.innerHTML = '<div class="empty-state">No games scheduled yet.</div>';
-    if (archiveSection) archiveSection.style.display = adminPass ? 'block' : 'none';
-    return;
-  }
+// Build one game card. `org` is the org the game belongs to (single-view: ORG; hub: that
+// section's org) so copy-links and signups route to the right token. `admin` toggles the
+// admin edit/publish/delete controls (never shown in the player-only hub).
+function gameCardHtml(game, org, admin) {
+  const players = (game.signups || []).slice().sort(byCreated);
+  const roster = players.slice(0, game.max_players);
+  const waitlist = players.slice(game.max_players);
+  const spotsLeft = Math.max(0, game.max_players - roster.length);
+  const isDraft = game.status === 'draft';
 
-  // Cache labels
-  for (const g of games) { gameLabels[g.id] = g.label; }
+  // Store data for copy / signup routing
+  gamesData[game.id] = { game, roster, waitlist };
+  gameOrg[game.id] = org;
 
-  let html = '';
-  for (const game of games) {
-      const players = (game.signups || []).slice().sort(byCreated);
-      const roster = players.slice(0, game.max_players);
-      const waitlist = players.slice(game.max_players);
-      const spotsLeft = Math.max(0, game.max_players - roster.length);
-      const isDraft = game.status === 'draft';
-
-      html += `<div class="card${isDraft ? ' draft-card' : ''}">
+  let html = `<div class="card${isDraft ? ' draft-card' : ''}">
         <div class="game-header">
           <div>
             <div class="game-label">${esc(game.label)}${isDraft ? '<span class="draft-badge">Draft</span>' : ''}</div>
@@ -998,44 +1141,35 @@ function renderGames(games) {
           </div>
         </div>`;
 
-      if (roster.length) {
-        html += `<div class="roster"><div class="roster-title">Playing (${roster.length}/${game.max_players})</div>`;
-        roster.forEach((p, i) => {
-          html += playerRow(i + 1, p, game.id);
-        });
-        html += `</div>`;
-      }
+  if (roster.length) {
+    html += `<div class="roster"><div class="roster-title">Playing (${roster.length}/${game.max_players})</div>`;
+    roster.forEach((p, i) => { html += playerRow(i + 1, p, game.id); });
+    html += `</div>`;
+  }
 
-      if (waitlist.length) {
-        html += `<div class="waitlist-divider">Waitlist</div><div class="roster">`;
-        waitlist.forEach((p, i) => {
-          html += playerRow('W' + (i + 1), p, game.id);
-        });
-        html += `</div>`;
-      }
+  if (waitlist.length) {
+    html += `<div class="waitlist-divider">Waitlist</div><div class="roster">`;
+    waitlist.forEach((p, i) => { html += playerRow('W' + (i + 1), p, game.id); });
+    html += `</div>`;
+  }
 
-      // Store data for copy
-      gamesData[game.id] = { game, roster, waitlist };
-
-      if (!isDraft) {
-        html += `<div class="signup-area">
+  if (!isDraft) {
+    html += `<div class="signup-area">
           <div class="signup-row">
             <input type="text" id="name-${game.id}" placeholder="Name" maxlength="30" onkeydown="if(event.key==='Enter')signup('${game.id}')">
             <button class="btn-join" onclick="signup('${game.id}')">I'm in</button>
           </div>
           <div class="signup-hint">Enter the name of the person you want to sign up</div>
         </div>`;
-      }
+  }
 
-      if (adminPass) {
-        html += `<div class="game-admin-actions">`;
-        html += `<button class="btn-edit" onclick="toggleEditGame('${game.id}')">Edit</button>`;
-        if (isDraft) {
-          html += `<button class="btn-publish" onclick="publishGame('${game.id}')">Go Live</button>`;
-        }
-        html += `<button class="btn-danger btn-small" onclick="deleteGame('${game.id}')">Delete Game</button>
+  if (admin) {
+    html += `<div class="game-admin-actions">`;
+    html += `<button class="btn-edit" onclick="toggleEditGame('${game.id}')">Edit</button>`;
+    if (isDraft) html += `<button class="btn-publish" onclick="publishGame('${game.id}')">Go Live</button>`;
+    html += `<button class="btn-danger btn-small" onclick="deleteGame('${game.id}')">Delete Game</button>
         </div>`;
-        html += `<div class="edit-form" id="edit-form-${game.id}" style="display:none;">
+    html += `<div class="edit-form" id="edit-form-${game.id}" style="display:none;">
           <div class="form-group">
             <label>Label</label>
             <input type="text" id="edit-label-${game.id}" value="${escAttrHtml(game.label)}">
@@ -1061,11 +1195,23 @@ function renderGames(games) {
             <button class="btn-cancel" onclick="toggleEditGame('${game.id}')">Cancel</button>
           </div>
         </div>`;
-      }
+  }
 
-      html += `</div>`;
-    }
+  html += `</div>`;
+  return html;
+}
 
+function renderGames(games) {
+  const container = document.getElementById('games-container');
+  myNameSet = myNames();
+  const archiveSection = document.getElementById('archive-section');
+  if (!games || !games.length) {
+    container.innerHTML = '<div class="empty-state">No games scheduled yet.</div>';
+    if (archiveSection) archiveSection.style.display = adminPass ? 'block' : 'none';
+    return;
+  }
+  let html = '';
+  for (const game of games) html += gameCardHtml(game, ORG, !!adminPass);
   container.innerHTML = html;
   if (archiveSection) archiveSection.style.display = adminPass ? 'block' : 'none';
 }
@@ -1087,12 +1233,16 @@ function toggleArchives() {
 async function loadArchives() {
   const container = document.getElementById('archive-container');
   try {
-    const games = await query('games', 'select=*,signups(id,player_name,created_at)&status=eq.archived&order=game_date.desc,game_time.desc&signups.order=created_at.asc');
+    const r = await rpc('get_org_archived', { p_token: ORG.token, p_pass: adminPass });
+    if (!r || r.error) {
+      container.innerHTML = '<div class="card"><div class="empty-state" style="padding:16px;">Couldn\'t load archives.</div></div>';
+      return;
+    }
+    const games = r.games || [];
     if (!games.length) {
       container.innerHTML = '<div class="card"><div class="empty-state" style="padding:16px;">No archived games.</div></div>';
       return;
     }
-    for (const g of games) { gameLabels[g.id] = g.label; }
 
     let html = '';
     for (const game of games) {
@@ -1101,6 +1251,7 @@ async function loadArchives() {
       const waitlist = players.slice(game.max_players);
 
       gamesData[game.id] = { game, roster, waitlist };
+      gameOrg[game.id] = ORG;
 
       html += `<div class="card archived-card">
         <div class="game-header">
@@ -1148,7 +1299,7 @@ async function loadArchives() {
 
 async function unarchiveGame(gameId) {
   try {
-    await rpc('unarchive_game', { pass: adminPass, p_game_id: gameId });
+    await rpc('unarchive_game', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId });
     toast('Game restored!');
     loadGames();
     loadArchives();
@@ -1172,24 +1323,21 @@ async function signup(gameId) {
   const btn = input.closest('.signup-row') && input.closest('.signup-row').querySelector('.btn-join');
   if (btn) btn.disabled = true;
 
+  const token = (gameOrg[gameId] && gameOrg[gameId].token) || (ORG && ORG.token) || null;
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/signups`, {
-      method: 'POST', headers: headers(),
-      body: JSON.stringify({ game_id: gameId, player_name: name, device_id: deviceId() })
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      if (err.code === '23505') {
+    // signup_player logs the activity server-side and enforces open/duplicate/limits.
+    const res = await rpc('signup_player', { p_token: token, p_game_id: gameId, p_player_name: name, p_device_id: deviceId() });
+    if (res && res.ok === false) {
+      if (res.reason === 'duplicate') {
         toast(`${name} is already signed up! Same name? Add your last initial (e.g. "${name} B.")`, 6000);
       } else {
         toast('Error signing up');
       }
       return;
     }
-    logActivity(gameId, 'signup', name, name, !!adminPass); // best-effort, off the critical path
     rememberMyName(name);
     input.value = '';
-    await loadGames();
+    await refreshCurrentView();
     toast(signupMessage(gameId, name));
   } catch (e) {
     toast('Error signing up');
@@ -1237,19 +1385,16 @@ async function removePlayer(gameId, playerName) {
     actorName = r.name;
   }
 
+  const token = (gameOrg[gameId] && gameOrg[gameId].token) || (ORG && ORG.token) || null;
   try {
+    // Both RPCs log the removal server-side.
     if (adminPass) {
-      await rpc('admin_remove_signup', { pass: adminPass, p_game_id: gameId, p_player_name: playerName });
-      logActivity(gameId, 'admin_remove', playerName, actorName, true); // best-effort
+      await rpc('admin_remove_signup', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId, p_player_name: playerName });
     } else {
-      await fetch(
-        `${SUPABASE_URL}/rest/v1/signups?game_id=eq.${gameId}&player_name=eq.${encodeURIComponent(playerName)}`,
-        { method: 'DELETE', headers: headers() }
-      );
-      logActivity(gameId, 'remove', playerName, actorName, false); // best-effort
+      await rpc('remove_signup', { p_token: token, p_game_id: gameId, p_player_name: playerName, p_actor_name: actorName });
     }
     toast(`${playerName} removed`);
-    loadGames();
+    refreshCurrentView();
   } catch (e) {
     toast('Error removing');
   }
@@ -1276,25 +1421,18 @@ async function loadLog(full) {
   logExpanded = full;
 
   try {
-    let params = 'order=created_at.desc';
-    if (full) {
-      // Last 7 days
-      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      params += `&created_at=gte.${weekAgo}`;
-    } else {
-      params += '&limit=10';
-    }
+    // get_org_activity returns an ARRAY, with the game label already joined per entry.
+    // Default = last 10; p_full:true = up to 500 from the last 7 days.
+    const logs = await rpc('get_org_activity', { p_token: ORG.token, p_full: !!full });
 
-    const logs = await query('activity_log', params);
-
-    if (!logs.length) {
+    if (!logs || !logs.length) {
       container.innerHTML = '<div class="card"><div class="empty-state" style="padding:16px;">No activity yet.</div></div>';
       return;
     }
 
     let html = '<div class="card"><div class="log-list">';
     for (const entry of logs) {
-      const label = gameLabels[entry.game_id] || 'a game';
+      const label = entry.label || 'a game';
       let desc = '';
 
       switch (entry.action) {
@@ -1347,20 +1485,22 @@ function toggleAdmin() {
 async function loginAdmin(pass, silent) {
   pass = pass || document.getElementById('admin-pass').value.trim();
   if (!pass) return;
+  if (!ORG || !ORG.token) { if (!silent) toast('Load the roster first'); return; }
   try {
-    const r = await rpc('verify_admin', { pass });
-    if (r && r.length) {
+    const r = await rpc('verify_admin', { p_token: ORG.token, p_pass: pass });
+    if (r && r.ok) {
       adminPass = pass;
-      adminName = r[0].name;
-      localStorage.setItem('frisbee_admin', pass);
+      adminName = r.name;
+      setStoredPass(ORG.slug, pass);
       document.getElementById('admin-login').style.display = 'none';
       document.getElementById('admin-tools').style.display = 'block';
       document.getElementById('admin-panel').style.display = 'block';
-      if (!silent) toast(`Hi ${r[0].name}`);
-      loadGames();
+      if (!silent) toast(`Hi ${r.name}`);
+      await loadGames();       // reload with drafts + admin actions
+      renderOrgSettings();     // populate the branding editor + share block
     } else {
       // Stored passphrase no longer valid
-      localStorage.removeItem('frisbee_admin');
+      clearStoredPass(ORG.slug, ORG.is_default);
       if (!silent) toast('Wrong passphrase');
     }
   } catch (e) {
@@ -1371,7 +1511,7 @@ async function loginAdmin(pass, silent) {
 function logoutAdmin() {
   adminPass = null;
   adminName = null;
-  localStorage.removeItem('frisbee_admin');
+  if (ORG) clearStoredPass(ORG.slug, ORG.is_default);
   document.getElementById('admin-login').style.display = 'block';
   document.getElementById('admin-tools').style.display = 'none';
   document.getElementById('admin-pass').value = '';
@@ -1388,8 +1528,8 @@ async function createGame() {
   if (!date || !time || !label) { toast('Fill in all fields'); return; }
 
   try {
-    const gameId = await rpc('create_game', { pass: adminPass, p_date: date, p_time: time, p_label: label, p_max_players: max, p_maps_link: maps || null });
-    await logActivity(gameId, 'game_created', label, adminName, true);
+    // create_game logs the creation server-side.
+    await rpc('create_game', { p_token: ORG.token, p_pass: adminPass, p_date: date, p_time: time, p_label: label, p_max_players: max, p_maps_link: maps || null });
     toast('Game created!');
     document.getElementById('game-label').value = '';
     document.getElementById('game-maps').value = '';
@@ -1403,8 +1543,18 @@ let copyCandidates = [];
 
 async function openCopyPicker() {
   try {
-    const recent = await query('games', 'select=label,game_time,max_players,game_date,maps_link&order=game_date.desc,game_time.desc&limit=12');
-    if (!recent || !recent.length) { toast('No previous game to copy yet'); return; }
+    // Pull THIS org's games (live/draft + archived) via the org-scoped RPCs — never a
+    // direct table read, which would cross orgs.
+    const [state, arch] = await Promise.all([
+      loadState(ORG.token, adminPass).catch(() => null),
+      rpc('get_org_archived', { p_token: ORG.token, p_pass: adminPass }).catch(() => null)
+    ]);
+    let recent = [];
+    if (state && state.games) recent = recent.concat(state.games);
+    if (arch && arch.games) recent = recent.concat(arch.games);
+    if (!recent.length) { toast('No previous game to copy yet'); return; }
+    recent.sort((a, b) => (b.game_date + b.game_time).localeCompare(a.game_date + a.game_time));
+    recent = recent.slice(0, 12);
     // Show games from roughly the last couple of weeks; if there's been a long gap,
     // still offer the most recent one so the button always does something.
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1447,7 +1597,14 @@ function copyList(gameId) {
   const d = gamesData[gameId];
   if (!d) return;
   const { game, roster, waitlist } = d;
-  const notice = 'DO NOT COPY THIS MESSAGE, USE THIS LINK FOR SIGNUP!\neasygameroster.com';
+  const org = gameOrg[gameId] || ORG || {};
+  const link = org.is_default ? APP_BASE : APP_BASE + '/#/' + org.token;
+  // Default org keeps today's exact message. A custom signup_notice wins; otherwise a
+  // sensible per-org default that carries the org's own link.
+  let notice;
+  if (org.signup_notice) notice = org.signup_notice;
+  else if (org.is_default) notice = 'DO NOT COPY THIS MESSAGE, USE THIS LINK FOR SIGNUP!\n' + APP_BASE;
+  else notice = `${org.display_name} — sign up here (don't copy this message):\n${link}`;
   let text = `${notice}\n\n${game.label} — ${formatDate(game.game_date)}, ${formatTime(game.game_time)}\n`;
   if (game.maps_link) text += `\u{1F4CD} ${game.maps_link}\n`;
   text += `\n`;
@@ -1478,7 +1635,7 @@ async function saveEditGame(gameId) {
   if (!label || !date || !time) { toast('Fill in all fields'); return; }
 
   try {
-    await rpc('update_game', { pass: adminPass, p_game_id: gameId, p_date: date, p_time: time, p_label: label, p_max_players: max, p_maps_link: maps || null });
+    await rpc('update_game', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId, p_date: date, p_time: time, p_label: label, p_max_players: max, p_maps_link: maps || null });
     toast('Game updated');
     loadGames();
   } catch (e) { toast('Error updating game'); }
@@ -1486,8 +1643,7 @@ async function saveEditGame(gameId) {
 
 async function publishGame(gameId) {
   try {
-    await rpc('publish_game', { pass: adminPass, p_game_id: gameId });
-    await logActivity(gameId, 'game_published', gameLabels[gameId] || null, adminName, true);
+    await rpc('publish_game', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId });
     toast('Game is live!');
     loadGames();
   } catch (e) { toast('Error publishing game'); }
@@ -1496,8 +1652,8 @@ async function publishGame(gameId) {
 async function deleteGame(gameId) {
   if (!confirm('Delete this game and all signups?')) return;
   try {
-    await logActivity(gameId, 'game_deleted', gameLabels[gameId] || null, adminName, true);
-    await rpc('delete_game', { pass: adminPass, p_game_id: gameId });
+    // delete_game logs the deletion server-side.
+    await rpc('delete_game', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId });
     toast('Deleted');
     loadGames();
   } catch (e) { toast('Error deleting'); }
@@ -1508,7 +1664,7 @@ async function addAdmin() {
   const pass = document.getElementById('new-admin-pass').value.trim();
   if (!name || !pass) { toast('Fill in both fields'); return; }
   try {
-    await rpc('add_admin', { pass: adminPass, p_name: name, p_passphrase: pass });
+    await rpc('add_admin', { p_token: ORG.token, p_pass: adminPass, p_name: name, p_passphrase: pass });
     toast(`${name} added`);
     document.getElementById('new-admin-name').value = '';
     document.getElementById('new-admin-pass').value = '';
@@ -1548,20 +1704,10 @@ function subKeyMatches(sub) {
 // so we can safely re-store the same device on every load.
 function storeSubscription(sub) {
   const j = sub.toJSON();
-  const row = { endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent, device_id: deviceId() };
-  return fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions`, {
-    method: 'POST',
-    headers: { ...headers(), 'Prefer': 'return=minimal' },
-    body: JSON.stringify(row)
-  }).then(async (res) => {
-    if (res.status === 409) {
-      // endpoint already stored → keep its device_id current
-      await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(sub.endpoint)}`, {
-        method: 'PATCH', headers: { ...headers(), 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ device_id: deviceId(), user_agent: navigator.userAgent })
-      });
-    }
-    return res;
+  // save_subscription is an idempotent server-side upsert, scoped to this org's token.
+  return rpc('save_subscription', {
+    p_token: ORG && ORG.token, p_endpoint: sub.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth,
+    p_user_agent: navigator.userAgent, p_device_id: deviceId()
   });
 }
 
@@ -1621,7 +1767,7 @@ async function toggleNotify() {
       // valid current subscription → second tap means turn OFF
       const endpoint = existing.endpoint;
       await existing.unsubscribe();
-      await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, { method: 'DELETE', headers: headers() });
+      try { await rpc('delete_subscription', { p_token: ORG && ORG.token, p_endpoint: endpoint }); } catch (e) {}
       toast('Alerts turned off');
       await refreshNotifyState();
       return;
@@ -1629,7 +1775,7 @@ async function toggleNotify() {
     if (existing) {
       // stale subscription from an old key → drop it, then subscribe fresh below
       try { await existing.unsubscribe(); } catch (e) {}
-      fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(existing.endpoint)}`, { method: 'DELETE', headers: headers() }).catch(() => {});
+      rpc('delete_subscription', { p_token: ORG && ORG.token, p_endpoint: existing.endpoint }).catch(() => {});
     }
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') {
@@ -1638,13 +1784,12 @@ async function toggleNotify() {
       return;
     }
     const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY) });
-    const res = await storeSubscription(sub);
-    if (res.ok || res.status === 201 || res.status === 409) {
+    try {
+      await storeSubscription(sub);
       toast("Done — you'll get game alerts on this device 🔔", 4000);
-    } else {
-      const t = await res.text().catch(() => '');
-      console.error('subscription save failed', res.status, t);
-      toast('Could not save your subscription (' + res.status + '). Try again.');
+    } catch (e) {
+      console.error('subscription save failed', e);
+      toast('Could not save your subscription. Try again.');
     }
     await refreshNotifyState();
   } catch (e) {
@@ -1716,7 +1861,7 @@ function initInstall() {
 async function manualRefresh() {
   const b = document.getElementById('refresh-btn');
   if (b) b.classList.add('spinning');
-  try { await loadGames(); } catch (e) {}
+  try { await refreshCurrentView(); } catch (e) {}
   setTimeout(() => { if (b) b.classList.remove('spinning'); }, 450);
 }
 
@@ -1772,7 +1917,7 @@ applyTheme(currentTheme());
       ptr.style.transform = 'translateX(-50%) translateY(12px)';
       ptr.style.opacity = '1';
       ptr.classList.add('refreshing');
-      try { await loadGames(); } catch (e) {}
+      try { await refreshCurrentView(); } catch (e) {}
       ptr.classList.remove('refreshing', 'ready');
     }
     ptr.style.transform = 'translateX(-50%) translateY(-100%)';
@@ -1793,29 +1938,191 @@ function refreshIfIdle() {
   if (ae && ae.tagName === 'INPUT') return;
   const typing = Array.from(document.querySelectorAll('input[id^="name-"]')).some(i => i.value.trim());
   if (typing) return;
-  loadGames();
+  refreshCurrentView();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshIfIdle(); });
 window.addEventListener('focus', refreshIfIdle);
 
-// Restore admin session if saved
-const savedAdmin = localStorage.getItem('frisbee_admin');
-if (savedAdmin) {
-  loginAdmin(savedAdmin, true);
-} else {
-  // Instant paint from the last snapshot so there's no "Loading…" flash. The head-fired
-  // fetch is already in flight and overwrites this a beat later — no extra request, no delay.
-  try {
-    const snap = JSON.parse(localStorage.getItem('egr_snapshot') || 'null');
-    if (snap && Array.isArray(snap.games) && (Date.now() - snap.ts) < 3 * 24 * 60 * 60 * 1000) {
-      renderGames(snap.games);
+// ---------- Combined multi-org hub (installed app, >=2 joined orgs) ----------
+function openOrg(token) { location.hash = '#/' + token; }   // drill into that org's single view
+function removeOrg(token) {
+  const orgs = getOrgs().filter(o => o.token !== token);
+  setOrgs(orgs);
+  if (orgs.length >= 2) bootCombined();
+  else location.reload();  // dropped below the hub threshold → fall back to single/default
+}
+function renderOrgGroup(org, games, containerEl) {
+  myNameSet = myNames();
+  const live = (games || []).filter(g => g.status === 'live');   // hub is player-only: live games only
+  let html = `<div class="org-group-header">
+      <h2 class="org-group-title">${esc(org.display_name)}</h2>
+      <button class="org-open-btn" onclick="openOrg('${org.token}')">open &#8599;</button>
+    </div>`;
+  if (!live.length) html += `<div class="empty-state" style="padding:20px 16px;">No games scheduled yet.</div>`;
+  else for (const game of live) html += gameCardHtml(game, org, false);
+  containerEl.innerHTML = html;
+}
+function renderOrgLoadError(o, containerEl) {
+  containerEl.innerHTML = `<div class="card">
+      <div style="margin-bottom:10px;">Couldn't load <strong>${esc(o.display_name || 'this roster')}</strong>.</div>
+      <button class="btn-danger btn-small" onclick="removeOrg('${o.token}')">Remove</button>
+    </div>`;
+}
+async function bootCombined() {
+  VIEW = 'combined';
+  ORG = null;
+  document.title = 'My Rosters';
+  const h1 = document.querySelector('.app-header h1'); if (h1) h1.textContent = 'My Rosters';
+  const sub = document.querySelector('.subtitle'); if (sub) sub.textContent = 'All your games in one place';
+  const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = 'flex';
+  // hub is player-only — hide the single-view chrome
+  document.querySelectorAll('.log-section, .admin-toggle').forEach(el => { el.style.display = 'none'; });
+  ['notify-bar', 'archive-section', 'admin-panel', 'invite-helper', 'add-banner'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('/sw.js'); } catch (e) {} }
+  const orgs = getOrgs();
+  const container = document.getElementById('games-container');
+  container.innerHTML = '';
+  const sections = orgs.map(o => {
+    const s = document.createElement('div');
+    s.id = 'org-section-' + o.token;
+    container.appendChild(s);
+    return s;
+  });
+  await Promise.all(orgs.map(async (o, i) => {
+    try {
+      const state = await loadState(o.token, null);   // player view for each org, in parallel
+      renderOrgGroup(state.org, state.games, sections[i]);
+    } catch (e) {
+      renderOrgLoadError(o, sections[i]);
     }
-  } catch (e) {}
-  loadGames();
+  }));
 }
 
-initNotify();
-initInstall();
+// ---------- Add-a-roster modal ----------
+async function openAddRoster() {
+  const input = document.getElementById('add-roster-code');
+  if (input) input.value = '';
+  const msg = document.getElementById('add-roster-msg'); if (msg) msg.style.display = 'none';
+  document.getElementById('add-roster-overlay').style.display = 'flex';
+  // Gesture-bound clipboard read — prefill if it looks like an invite code.
+  try {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      const t = await navigator.clipboard.readText();
+      if (t && /^[A-Z0-9]{2,8}-[A-Z0-9]{6}$/i.test(t.trim()) && input) input.value = t.trim();
+    }
+  } catch (e) {}
+  setTimeout(() => { if (input) input.focus(); }, 60);
+}
+function closeAddRoster() { document.getElementById('add-roster-overlay').style.display = 'none'; }
+function showAddMsg(t) {
+  const msg = document.getElementById('add-roster-msg');
+  if (msg) { msg.textContent = t; msg.style.display = 'block'; }
+}
+async function confirmAddRoster() {
+  const code = (document.getElementById('add-roster-code').value || '').trim();
+  if (!code) { showAddMsg('Enter an invite code'); return; }
+  try {
+    const r = await rpc('resolve_invite', { p_code: code });
+    if (!r || r.error) { showAddMsg("We couldn't find a roster for that code."); return; }
+    const orgs = getOrgs();
+    if (!orgs.some(o => o.token === r.token)) { orgs.push({ token: r.token, display_name: r.display_name }); setOrgs(orgs); }
+    closeAddRoster();
+    toast(`${r.display_name} added`);
+    if (VIEW === 'combined') bootCombined();
+  } catch (e) { showAddMsg("We couldn't add that roster. Try again."); }
+}
+
+// ---------- Join affordances (single view, branded org via token link) ----------
+function copyInviteCode() {
+  if (!ORG || !ORG.invite_code) return;
+  navigator.clipboard.writeText(ORG.invite_code).then(() => toast('Invite code copied')).catch(() => toast("Couldn't copy"));
+}
+function copyShareLink() {
+  if (!ORG) return;
+  const link = ORG.is_default ? APP_BASE : APP_BASE + '/#/' + ORG.token;
+  navigator.clipboard.writeText(link).then(() => toast('Share link copied')).catch(() => toast("Couldn't copy"));
+}
+function showInviteHelper() {
+  const el = document.getElementById('invite-helper');
+  if (!el || !ORG || !ORG.invite_code) return;
+  el.innerHTML = `<div class="card invite-card">
+      <div>Add this roster to your Rosters app</div>
+      <div class="invite-code-big">${esc(ORG.invite_code)}</div>
+      <button class="btn-copy" onclick="copyInviteCode()">Copy invite code</button>
+      <ol class="invite-steps"><li>Copy this code</li><li>Open the Rosters app</li><li>Tap + and paste</li></ol>
+    </div>`;
+  el.style.display = 'block';
+}
+function joinCurrentOrg() {
+  if (!ORG || !ORG.token) return;
+  const orgs = getOrgs();
+  if (!orgs.some(o => o.token === ORG.token)) { orgs.push({ token: ORG.token, display_name: ORG.display_name }); setOrgs(orgs); }
+  const el = document.getElementById('add-banner'); if (el) el.style.display = 'none';
+  toast('Added to your rosters');
+}
+function showAddBanner() {
+  const el = document.getElementById('add-banner');
+  if (!el || !ORG) return;
+  el.innerHTML = `<span>Add <strong>${esc(ORG.display_name)}</strong> to your rosters</span>
+      <button class="btn-install" onclick="joinCurrentOrg()">Add</button>`;
+  el.style.display = 'flex';
+}
+function maybeShowJoinAffordances(token) {
+  if (!token || !ORG || !ORG.slug || ORG.is_default) return;   // only for a loaded, non-default org
+  const iOS = /iP(hone|ad|od)/.test(navigator.userAgent);
+  if (iOS && !isStandalone()) { showInviteHelper(); return; }
+  if (!getOrgs().some(o => o.token === ORG.token)) showAddBanner();
+}
+
+// ---------- Org branding editor (admin, single view) ----------
+function renderOrgSettings() {
+  if (!ORG) return;
+  const n = document.getElementById('org-name-input'); if (n) n.value = ORG.display_name || '';
+  const s = document.getElementById('org-subtitle-input'); if (s) s.value = ORG.subtitle || '';
+  const nt = document.getElementById('org-notice-input'); if (nt) nt.value = ORG.signup_notice || '';
+  const sl = document.getElementById('org-share-link'); if (sl) sl.value = ORG.is_default ? APP_BASE : APP_BASE + '/#/' + ORG.token;
+  const ic = document.getElementById('org-invite-code'); if (ic) ic.value = ORG.invite_code || '';
+}
+async function saveOrgBranding() {
+  if (!ORG) return;
+  const dn = document.getElementById('org-name-input').value.trim();
+  const st = document.getElementById('org-subtitle-input').value.trim();
+  const nt = document.getElementById('org-notice-input').value.trim();
+  if (!dn) { toast('A name is required'); return; }
+  try {
+    await rpc('set_org_branding', { p_token: ORG.token, p_pass: adminPass, p_display_name: dn, p_subtitle: st, p_signup_notice: nt });
+    ORG.display_name = dn; ORG.subtitle = st; ORG.signup_notice = nt;
+    cacheBranding(ORG, ROUTE_TOKEN);
+    applyBranding(ORG);
+    toast('Saved');
+  } catch (e) { toast('Error saving'); }
+}
+
+// ---------- Boot ----------
+async function bootSingle(token) {
+  VIEW = 'single';
+  ROUTE_TOKEN = token;
+  ORG = { token: token };
+  paintCachedBranding(token);   // instant branding from cache (no-op for the default org)
+  paintSnapshot(token);         // instant roster from the last snapshot (no "Loading…" flash)
+  migrateLegacyAdmin();
+  await loadGames();            // full state → sets ORG, applies branding, seeds egr_orgs, renders
+  if (!ORG || !ORG.slug) return;  // load failed → loadGames already showed the retry UI
+  const pass = storedPass(ORG.slug, ORG.is_default);
+  if (pass) await loginAdmin(pass, true);   // restore admin session → drafts + admin actions
+  maybeShowJoinAffordances(token);
+  initNotify();
+  initInstall();
+}
+function boot() {
+  const route = resolveRoute();
+  if (route.view === 'combined') { bootCombined(); return; }
+  bootSingle(route.token);
+}
+window.addEventListener('hashchange', () => location.reload());  // drilling in/out re-boots the right view
+boot();
 </script>
 </body>
 </html>
