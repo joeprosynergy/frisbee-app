@@ -743,6 +743,37 @@
 
   <div id="admin-tools" style="display:none;">
     <div class="card">
+      <h2>Create Game</h2>
+      <button class="glow-btn" style="margin:0 0 12px;" onclick="openCopyPicker()">&#8635; Copy last week</button>
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="game-date">
+      </div>
+      <div class="form-group">
+        <label>Time</label>
+        <input type="time" id="game-time" value="18:15">
+      </div>
+      <div class="form-group">
+        <label>Label</label>
+        <input type="text" id="game-label" placeholder='e.g. "6:15pm Game"'>
+        <div class="field-hint">How this game is titled in the list, e.g. &ldquo;6:15pm Game&rdquo; or &ldquo;Sunday Pickup&rdquo;.</div>
+      </div>
+      <div class="form-group">
+        <label>Max Players</label>
+        <input type="number" id="game-max" value="18" min="2" max="50">
+        <div class="field-hint">How many spots are on the roster. Anyone who signs up after it's full goes on the waitlist.</div>
+      </div>
+      <div class="form-group">
+        <label>Google Maps link (optional)</label>
+        <input type="url" id="game-maps" placeholder="Paste a Google Maps link">
+        <div class="field-hint">Adds a &#128205; Location link to the game and into the copied message. Paste a Google Maps share link, or leave blank.</div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-small" onclick="createGame()">Create Game</button>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Roster settings</h2>
       <p class="card-intro">Controls how your roster looks at the top of the page and how people find it.</p>
       <div class="form-group">
@@ -780,37 +811,6 @@
           </div>
           <div class="field-hint">Only needed by people who installed this as an app and want <em>your</em> roster added to it. In the app they tap <strong>&ldquo;Add a roster&rdquo;</strong> and type this code. (On iPhone a tapped link won't open the installed app, so the code is the way in.) Most people never need this &mdash; just send them the share link.</div>
         </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Create Game</h2>
-      <button class="glow-btn" style="margin:0 0 12px;" onclick="openCopyPicker()">&#8635; Copy last week</button>
-      <div class="form-group">
-        <label>Date</label>
-        <input type="date" id="game-date">
-      </div>
-      <div class="form-group">
-        <label>Time</label>
-        <input type="time" id="game-time" value="18:15">
-      </div>
-      <div class="form-group">
-        <label>Label</label>
-        <input type="text" id="game-label" placeholder='e.g. "6:15pm Game"'>
-        <div class="field-hint">How this game is titled in the list, e.g. &ldquo;6:15pm Game&rdquo; or &ldquo;Sunday Pickup&rdquo;.</div>
-      </div>
-      <div class="form-group">
-        <label>Max Players</label>
-        <input type="number" id="game-max" value="18" min="2" max="50">
-        <div class="field-hint">How many spots are on the roster. Anyone who signs up after it's full goes on the waitlist.</div>
-      </div>
-      <div class="form-group">
-        <label>Google Maps link (optional)</label>
-        <input type="url" id="game-maps" placeholder="Paste a Google Maps link">
-        <div class="field-hint">Adds a &#128205; Location link to the game and into the copied message. Paste a Google Maps share link, or leave blank.</div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-small" onclick="createGame()">Create Game</button>
       </div>
     </div>
 
@@ -1058,7 +1058,7 @@ function cacheBranding(org, routeToken) {
   try {
     localStorage.setItem('egr_org_' + (routeToken || 'default'), JSON.stringify({
       display_name: org.display_name, subtitle: org.subtitle, is_default: org.is_default,
-      slug: org.slug, invite_code: org.invite_code, token: org.token
+      slug: org.slug, invite_code: org.invite_code, token: org.token, signup_notice: org.signup_notice
     }));
   } catch (e) {}
 }
@@ -1967,8 +1967,11 @@ function openOrg(token) { location.hash = '#/' + token; }   // drill into that o
 function removeOrg(token) {
   const orgs = getOrgs().filter(o => o.token !== token);
   setOrgs(orgs);
-  if (orgs.length >= 2) bootCombined();
-  else location.reload();  // dropped below the hub threshold → fall back to single/default
+  if (orgs.length >= 2) { bootCombined(); return; }
+  // Exactly one left → open THAT survivor by token, so the kept roster isn't lost and the
+  // removed org (even the default) doesn't silently reappear.
+  if (orgs.length === 1) { location.hash = '#/' + orgs[0].token; location.reload(); return; }
+  location.reload();
 }
 function renderOrgGroup(org, games, containerEl) {
   myNameSet = myNames();
@@ -2049,7 +2052,9 @@ async function confirmAddRoster() {
     if (!orgs.some(o => o.token === r.token)) { orgs.push({ token: r.token, display_name: r.display_name }); setOrgs(orgs); }
     closeAddRoster();
     toast(`${r.display_name} added`);
-    if (VIEW === 'combined') bootCombined();
+    if (VIEW === 'combined') { bootCombined(); return; }
+    // Added from a single view in the installed app: once there are 2+ rosters, drop into the hub.
+    if (isStandalone() && getOrgs().length >= 2) { if (location.hash) location.hash = ''; else location.reload(); }
   } catch (e) { showAddMsg("We couldn't add that roster. Try again."); }
 }
 
@@ -2123,9 +2128,14 @@ async function saveOrgBranding() {
 async function bootSingle(token) {
   VIEW = 'single';
   ROUTE_TOKEN = token;
-  ORG = { token: token };
+  // Hydrate from cached branding so copy links / notices are correct during the pre-load
+  // (and offline) window — not a bare {token} stub that would emit "undefined"/#/null.
+  ORG = Object.assign({ token: token }, readBranding(token) || {});
   paintCachedBranding(token);   // instant branding from cache (no-op for the default org)
   paintSnapshot(token);         // instant roster from the last snapshot (no "Loading…" flash)
+  // In the installed app, expose the "Add a roster" (+) so a 2nd roster is reachable (esp. iOS,
+  // where a tapped link opens Safari, not the app). Hidden in a plain browser tab.
+  const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = isStandalone() ? 'flex' : 'none';
   migrateLegacyAdmin();
   await loadGames();            // full state → sets ORG, applies branding, seeds egr_orgs, renders
   if (!ORG || !ORG.slug) return;  // load failed → loadGames already showed the retry UI
