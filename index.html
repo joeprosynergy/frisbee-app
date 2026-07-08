@@ -947,6 +947,30 @@
       <button class="btn-cancel" onclick="closeEditRoster()">Cancel</button>
       <button class="btn-save" onclick="saveOrgBranding()">Save settings</button>
     </div>
+    <div id="roster-danger-zone" style="display:none; margin-top:22px; padding-top:16px; border-top:1px solid rgba(128,128,128,0.2);">
+      <button class="btn-danger" style="width:100%;" onclick="openDeleteRoster()">Delete this roster</button>
+      <div class="field-hint">Permanently removes this roster and all its games and signups. Can't be undone.</div>
+    </div>
+  </div>
+</div>
+
+<div id="delete-roster-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeDeleteRoster()">
+  <div class="modal">
+    <div class="modal-title">Delete this roster?</div>
+    <p class="card-intro">This permanently deletes <strong id="delete-roster-name"></strong> and every game, signup, and bit of history in it. This <strong>cannot be undone</strong>.</p>
+    <div class="form-group">
+      <label>Type the roster name to confirm</label>
+      <input type="text" id="delete-confirm-input" placeholder="Roster name" autocapitalize="off">
+    </div>
+    <div class="form-group">
+      <label>Enter the admin passphrase</label>
+      <input type="text" id="delete-confirm-pass" placeholder="Passphrase" autocapitalize="off" onkeydown="if(event.key==='Enter')confirmDeleteRoster()">
+    </div>
+    <div id="delete-roster-msg" style="display:none;color:#e53935;font-size:0.82rem;margin-top:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeDeleteRoster()">Cancel</button>
+      <button class="btn-danger" onclick="confirmDeleteRoster()">Delete forever</button>
+    </div>
   </div>
 </div>
 
@@ -2240,6 +2264,41 @@ async function confirmCreateRoster() {
 // ---------- Edit-roster + add-admin modals (admin, single view) ----------
 function openEditRoster() { renderOrgSettings(); document.getElementById('edit-roster-overlay').style.display = 'flex'; }
 function closeEditRoster() { const el = document.getElementById('edit-roster-overlay'); if (el) el.style.display = 'none'; }
+function openDeleteRoster() {
+  if (!ORG || ORG.is_default) return;   // the default roster can't be deleted
+  const nm = document.getElementById('delete-roster-name'); if (nm) nm.textContent = ORG.display_name || 'this roster';
+  const inp = document.getElementById('delete-confirm-input'); if (inp) inp.value = '';
+  const pw = document.getElementById('delete-confirm-pass'); if (pw) pw.value = '';
+  const msg = document.getElementById('delete-roster-msg'); if (msg) msg.style.display = 'none';
+  document.getElementById('delete-roster-overlay').style.display = 'flex';
+}
+function closeDeleteRoster() { const el = document.getElementById('delete-roster-overlay'); if (el) el.style.display = 'none'; }
+async function confirmDeleteRoster() {
+  if (!ORG || ORG.is_default) return;
+  const msg = document.getElementById('delete-roster-msg');
+  const typed = (document.getElementById('delete-confirm-input').value || '').trim();
+  const typedPass = (document.getElementById('delete-confirm-pass').value || '').trim();
+  if (typed.toLowerCase() !== (ORG.display_name || '').trim().toLowerCase()) {
+    if (msg) { msg.textContent = "That doesn't match the roster name."; msg.style.display = 'block'; }
+    return;
+  }
+  if (!typedPass) { if (msg) { msg.textContent = 'Enter the admin passphrase.'; msg.style.display = 'block'; } return; }
+  const gone = ORG;
+  try {
+    // The passphrase is validated server-side (delete_roster rejects a wrong one with 'forbidden').
+    const r = await rpc('delete_roster', { p_token: gone.token, p_pass: typedPass });
+    if (!r || !r.ok) { if (msg) { msg.textContent = 'Could not delete. Try again.'; msg.style.display = 'block'; } return; }
+    const orgs = getOrgs().filter(o => o.token !== gone.token);
+    setOrgs(orgs);
+    try { clearStoredPass(gone.slug, gone.is_default); } catch (e) {}
+    toast(`${gone.display_name} deleted`);
+    if (orgs.length >= 1) location.hash = '#/' + orgs[0].token; else location.hash = '';
+    location.reload();
+  } catch (e) {
+    const m = String((e && e.message) || '');
+    if (msg) { msg.textContent = m.includes('forbidden') ? 'That passphrase is incorrect.' : 'Could not delete. Try again.'; msg.style.display = 'block'; }
+  }
+}
 function openAddAdmin() { document.getElementById('add-admin-overlay').style.display = 'flex'; }
 function closeAddAdmin() { const el = document.getElementById('add-admin-overlay'); if (el) el.style.display = 'none'; }
 
@@ -2276,6 +2335,8 @@ function renderOrgSettings() {
   const s = document.getElementById('org-subtitle-input'); if (s) s.value = ORG.subtitle || '';
   const nt = document.getElementById('org-notice-input'); if (nt) nt.value = ORG.signup_notice || '';
   const sl = document.getElementById('org-share-link'); if (sl) sl.value = ORG.is_default ? APP_BASE : APP_BASE + '/#/' + ORG.token;
+  // Delete is offered only for non-default rosters (the default/frisbee roster can't be deleted).
+  const dz = document.getElementById('roster-danger-zone'); if (dz) dz.style.display = ORG.is_default ? 'none' : 'block';
 }
 async function saveOrgBranding() {
   if (!ORG) return;
