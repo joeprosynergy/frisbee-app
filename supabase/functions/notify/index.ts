@@ -67,7 +67,12 @@ Deno.serve(async (req) => {
   const game = (await getJson(`games?id=eq.${game_id}&select=*`))?.[0];
   if (!game) return Response.json({ skip: "no game" });
 
-  const subs = await getJson(`push_subscriptions?select=endpoint,p256dh,auth,device_id`);
+  // Scope to THIS roster's subscribers only. push_org maps each subscription endpoint to its org,
+  // so a game in one roster never notifies another roster's people.
+  const orgRows = await getJson(`push_org?org_id=eq.${game.org_id}&select=endpoint`);
+  const orgEndpoints = new Set((Array.isArray(orgRows) ? orgRows : []).map((r: any) => r.endpoint));
+  const allSubs = await getJson(`push_subscriptions?select=endpoint,p256dh,auth,device_id`);
+  const subs = (Array.isArray(allSubs) ? allSubs : []).filter((s: any) => orgEndpoints.has(s.endpoint));
   const results: any = { type, dry_run: !!dry_run, sent: 0, removed: 0, errors: [], breakdown: [] };
   if (!Array.isArray(subs) || subs.length === 0) return Response.json({ ...results, skip: "no subs" });
   const deliver = (s: any[], payload: any) => (dry_run ? Promise.resolve() : sendTo(s, payload, results));
