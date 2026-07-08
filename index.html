@@ -2023,19 +2023,15 @@ async function bootCombined() {
 }
 
 // ---------- Add-a-roster modal ----------
-async function openAddRoster() {
+function openAddRoster() {
   const input = document.getElementById('add-roster-code');
   if (input) input.value = '';
   const msg = document.getElementById('add-roster-msg'); if (msg) msg.style.display = 'none';
   document.getElementById('add-roster-overlay').style.display = 'flex';
-  // Gesture-bound clipboard read — prefill if it looks like an invite code.
-  try {
-    if (navigator.clipboard && navigator.clipboard.readText) {
-      const t = await navigator.clipboard.readText();
-      if (t && /^[A-Z0-9]{2,8}-[A-Z0-9]{6}$/i.test(t.trim()) && input) input.value = t.trim();
-    }
-  } catch (e) {}
-  setTimeout(() => { if (input) input.focus(); }, 60);
+  // Focus after the overlay paints (rAF also nudges iOS to render the fixed overlay,
+  // instead of it only appearing on the next scroll). No auto clipboard read — that was
+  // triggering an iOS paste prompt and blocking the paint. Long-press the field to paste.
+  requestAnimationFrame(() => { if (input) input.focus(); });
 }
 function closeAddRoster() { document.getElementById('add-roster-overlay').style.display = 'none'; }
 function showAddMsg(t) {
