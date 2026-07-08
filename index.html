@@ -689,9 +689,33 @@
     body.dark .org-open-btn:active { background: #2a2c57; }
     body.dark .invite-code-big { color: #8ab0ff; }
     body.dark .invite-steps { color: #a6a8d4; }
+    /* Fun colored bubbles drifting in the page background (behind all content, so cards stay clean) */
+    #bubbles { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+    #bubbles span {
+      position: absolute; display: block; border-radius: 50%;
+      filter: blur(30px); opacity: 0.45;
+      animation: bubbleFloat 24s ease-in-out infinite;
+      will-change: transform;
+    }
+    @keyframes bubbleFloat {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33%      { transform: translate(14px, -26px) scale(1.08); }
+      66%      { transform: translate(-16px, 18px) scale(0.94); }
+    }
+    body.dark #bubbles span { opacity: 0.34; }
+    @media (prefers-reduced-motion: reduce) { #bubbles span { animation: none; } }
   </style>
 </head>
 <body>
+<div id="bubbles" aria-hidden="true">
+  <span style="width:190px;height:190px;background:#ff8fab;top:-50px;left:-40px;animation-delay:0s;"></span>
+  <span style="width:150px;height:150px;background:#74c0fc;top:18%;right:-55px;animation-delay:-4s;"></span>
+  <span style="width:130px;height:130px;background:#ffd43b;top:52%;left:-45px;animation-delay:-9s;"></span>
+  <span style="width:210px;height:210px;background:#9775fa;bottom:-70px;right:-40px;animation-delay:-13s;"></span>
+  <span style="width:120px;height:120px;background:#63e6be;bottom:14%;left:26%;animation-delay:-6s;"></span>
+  <span style="width:100px;height:100px;background:#ffa94d;top:40%;left:48%;animation-delay:-11s;"></span>
+  <span style="width:90px;height:90px;background:#f783ac;top:74%;right:20%;animation-delay:-16s;"></span>
+</div>
 
 <script>(function(){try{var s=localStorage.getItem('egr_theme');var d=s?s==='dark':(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches);if(d)document.body.classList.add('dark');}catch(e){}})();</script>
 
