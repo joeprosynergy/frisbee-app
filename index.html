@@ -701,7 +701,6 @@
 <!-- "Add this roster to your rosters" banner (branded token link, org not yet joined) -->
 <div id="add-banner" class="install-banner" style="display:none;"></div>
 <!-- iOS invite-code helper card (branded org, Safari, not installed) -->
-<div id="invite-helper" style="display:none;"></div>
 
 <div id="games-container">
   <div class="empty-state">Loading...</div>
@@ -801,15 +800,7 @@
             <input type="text" id="org-share-link" readonly onclick="this.select()">
             <button class="btn-copy" style="margin-top:0;" onclick="copyShareLink()">Copy</button>
           </div>
-          <div class="field-hint"><strong>This is the one you'll use.</strong> Send it to your players (WhatsApp, text, email). They open it and sign up right in their browser &mdash; nothing to install.</div>
-        </div>
-        <div class="form-group">
-          <label>Invite code</label>
-          <div class="share-row">
-            <input type="text" id="org-invite-code" readonly onclick="this.select()">
-            <button class="btn-copy" style="margin-top:0;" onclick="copyInviteCode()">Copy</button>
-          </div>
-          <div class="field-hint">Only needed by people who installed this as an app and want <em>your</em> roster added to it. In the app they tap <strong>&ldquo;Add a roster&rdquo;</strong> and type this code. (On iPhone a tapped link won't open the installed app, so the code is the way in.) Most people never need this &mdash; just send them the share link.</div>
+          <div class="field-hint"><strong>This is all you share.</strong> Send it to your players (WhatsApp, text, email) &mdash; they open it and sign up in their browser, nothing to install. It's also the link anyone using the installed app pastes under &ldquo;Add a roster&rdquo; to add your games to theirs.</div>
         </div>
       </div>
     </div>
@@ -866,9 +857,12 @@
   <div class="modal">
     <div class="modal-title">Add a roster</div>
     <div class="form-group">
-      <label>Invite code</label>
-      <input type="text" id="add-roster-code" placeholder="e.g. ABC-1234XY" autocapitalize="characters" onkeydown="if(event.key==='Enter')confirmAddRoster()">
-      <div class="field-hint">Ask the roster's organizer for their invite code &mdash; they'll find it in their Roster settings. This adds their games alongside yours in this app.</div>
+      <label>League link</label>
+      <div class="share-row">
+        <input type="text" id="add-roster-code" placeholder="Paste the league's link" onkeydown="if(event.key==='Enter')confirmAddRoster()">
+        <button class="btn-copy" style="margin-top:0;" onclick="pasteRosterLink()">Paste</button>
+      </div>
+      <div class="field-hint">Paste the link the league's organizer shared (the same one players use). It adds their games here, alongside yours.</div>
     </div>
     <div id="add-roster-msg" style="display:none;color:#e53935;font-size:0.82rem;margin-top:8px;"></div>
     <div class="modal-actions">
@@ -1999,7 +1993,7 @@ async function bootCombined() {
   const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = 'flex';
   // hub is player-only — hide the single-view chrome
   document.querySelectorAll('.log-section, .admin-toggle').forEach(el => { el.style.display = 'none'; });
-  ['notify-bar', 'archive-section', 'admin-panel', 'invite-helper', 'add-banner'].forEach(id => {
+  ['notify-bar', 'archive-section', 'admin-panel', 'add-banner'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('/sw.js'); } catch (e) {} }
@@ -2038,42 +2032,40 @@ function showAddMsg(t) {
   const msg = document.getElementById('add-roster-msg');
   if (msg) { msg.textContent = t; msg.style.display = 'block'; }
 }
-async function confirmAddRoster() {
-  const code = (document.getElementById('add-roster-code').value || '').trim();
-  if (!code) { showAddMsg('Enter an invite code'); return; }
+// Pull a roster token out of whatever was pasted — a full share link (…/#/<token>) or a bare token.
+function parseTokenFrom(text) {
+  const t = (text || '').trim();
+  const m = t.match(/#\/([A-Za-z0-9_-]{16,})/) || t.match(/^([A-Za-z0-9_-]{16,})$/);
+  return m ? m[1] : null;
+}
+async function pasteRosterLink() {
   try {
-    const r = await rpc('resolve_invite', { p_code: code });
-    if (!r || r.error) { showAddMsg("We couldn't find a roster for that code."); return; }
+    const t = await navigator.clipboard.readText();
+    const input = document.getElementById('add-roster-code');
+    if (input && t) input.value = t.trim();
+  } catch (e) { showAddMsg('Long-press the box and choose Paste.'); }
+}
+async function confirmAddRoster() {
+  const token = parseTokenFrom(document.getElementById('add-roster-code').value);
+  if (!token) { showAddMsg("Paste the league's link (the part after #/ is the code)."); return; }
+  try {
+    const r = await rpc('get_org_state', { p_token: token });
+    if (!r || r.error || !r.org) { showAddMsg("That link didn't match a roster — check you copied the whole thing."); return; }
     const orgs = getOrgs();
-    if (!orgs.some(o => o.token === r.token)) { orgs.push({ token: r.token, display_name: r.display_name }); setOrgs(orgs); }
+    if (!orgs.some(o => o.token === token)) { orgs.push({ token: token, display_name: r.org.display_name }); setOrgs(orgs); }
     closeAddRoster();
-    toast(`${r.display_name} added`);
+    toast(`${r.org.display_name} added`);
     if (VIEW === 'combined') { bootCombined(); return; }
     // Added from a single view in the installed app: once there are 2+ rosters, drop into the hub.
     if (isStandalone() && getOrgs().length >= 2) { if (location.hash) location.hash = ''; else location.reload(); }
-  } catch (e) { showAddMsg("We couldn't add that roster. Try again."); }
+  } catch (e) { showAddMsg("Couldn't add that roster. Try again."); }
 }
 
-// ---------- Join affordances (single view, branded org via token link) ----------
-function copyInviteCode() {
-  if (!ORG || !ORG.invite_code) return;
-  navigator.clipboard.writeText(ORG.invite_code).then(() => toast('Invite code copied')).catch(() => toast("Couldn't copy"));
-}
+// ---------- Join affordance (installed app only, viewing a league not yet saved) ----------
 function copyShareLink() {
   if (!ORG) return;
   const link = ORG.is_default ? APP_BASE : APP_BASE + '/#/' + ORG.token;
   navigator.clipboard.writeText(link).then(() => toast('Share link copied')).catch(() => toast("Couldn't copy"));
-}
-function showInviteHelper() {
-  const el = document.getElementById('invite-helper');
-  if (!el || !ORG || !ORG.invite_code) return;
-  el.innerHTML = `<div class="card invite-card">
-      <div>Add this roster to your Rosters app</div>
-      <div class="invite-code-big">${esc(ORG.invite_code)}</div>
-      <button class="btn-copy" onclick="copyInviteCode()">Copy invite code</button>
-      <ol class="invite-steps"><li>Copy this code</li><li>Open the Rosters app</li><li>Tap + and paste</li></ol>
-    </div>`;
-  el.style.display = 'block';
 }
 function joinCurrentOrg() {
   if (!ORG || !ORG.token) return;
@@ -2091,8 +2083,7 @@ function showAddBanner() {
 }
 function maybeShowJoinAffordances(token) {
   if (!token || !ORG || !ORG.slug || ORG.is_default) return;   // only for a loaded, non-default org
-  const iOS = /iP(hone|ad|od)/.test(navigator.userAgent);
-  if (iOS && !isStandalone()) { showInviteHelper(); return; }
+  if (!isStandalone()) return;   // browser users never see multi-roster UI; adding happens only in the installed app
   if (!getOrgs().some(o => o.token === ORG.token)) showAddBanner();
 }
 
@@ -2103,7 +2094,6 @@ function renderOrgSettings() {
   const s = document.getElementById('org-subtitle-input'); if (s) s.value = ORG.subtitle || '';
   const nt = document.getElementById('org-notice-input'); if (nt) nt.value = ORG.signup_notice || '';
   const sl = document.getElementById('org-share-link'); if (sl) sl.value = ORG.is_default ? APP_BASE : APP_BASE + '/#/' + ORG.token;
-  const ic = document.getElementById('org-invite-code'); if (ic) ic.value = ORG.invite_code || '';
 }
 async function saveOrgBranding() {
   if (!ORG) return;
