@@ -23,8 +23,8 @@
       var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
       var orgs = [];
       try { orgs = JSON.parse(localStorage.getItem('egr_orgs') || '[]'); } catch (e) {}
-      // The installed multi-roster hub (>=2 joined orgs, no token) has no single org to prefetch.
-      if (standalone && orgs.length >= 2 && !token) return;
+      // The multi-roster hub (>=2 joined orgs, no token) has no single org to prefetch.
+      if (orgs.length >= 2 && !token) return;
       window.__egrPrefetch = {
         token: token,
         promise: fetch(U + '/rest/v1/rpc/get_org_state', {
@@ -817,6 +817,7 @@
 
     <div class="card">
       <h2>Manage roster</h2>
+      <button style="display:block;width:100%;margin-bottom:10px;background:#1976d2;color:#fff;border:none;border-radius:8px;padding:11px;font-size:0.9rem;font-weight:600;cursor:pointer;-webkit-appearance:none;" onclick="shareRosterLink()">&#128279; Share roster link</button>
       <button class="btn-edit" style="display:block;width:100%;margin-bottom:8px;" onclick="openEditRoster()">Edit roster settings</button>
       <button class="btn-edit" style="display:block;width:100%;margin-bottom:8px;" onclick="openAddAdmin()">Add another admin</button>
       <button class="btn-edit" style="display:block;width:100%;" onclick="openCreateRoster()">Create a new roster</button>
@@ -1139,7 +1140,7 @@ function setOrgs(a) { try { localStorage.setItem('egr_orgs', JSON.stringify(a));
 function resolveRoute() {
   const token = parseToken();
   if (token) return { view: 'single', token: token };
-  if (isStandalone() && getOrgs().length >= 2) return { view: 'combined', token: null };
+  if (getOrgs().length >= 2) return { view: 'combined', token: null };   // 2+ rosters → "My Rosters" home (browser or app)
   return { view: 'single', token: null };
 }
 
@@ -2196,7 +2197,7 @@ async function confirmAddRoster() {
     toast(`${r.org.display_name} added`);
     if (VIEW === 'combined') { bootCombined(); return; }
     // Added from a single view in the installed app: once there are 2+ rosters, drop into the hub.
-    if (isStandalone() && getOrgs().length >= 2) { if (location.hash) location.hash = ''; else location.reload(); }
+    if (getOrgs().length >= 2) { if (location.hash) location.hash = ''; else location.reload(); }
   } catch (e) { showAddMsg("Couldn't add that roster. Try again."); }
 }
 
@@ -2303,6 +2304,15 @@ function openAddAdmin() { document.getElementById('add-admin-overlay').style.dis
 function closeAddAdmin() { const el = document.getElementById('add-admin-overlay'); if (el) el.style.display = 'none'; }
 
 // ---------- Join affordance (installed app only, viewing a league not yet saved) ----------
+function shareRosterLink() {
+  if (!ORG) return;
+  const url = 'https://' + (ORG.is_default ? APP_BASE : APP_BASE + '/#/' + ORG.token);
+  if (navigator.share) {
+    navigator.share({ title: ORG.display_name || 'Game Roster', text: 'Sign up for ' + (ORG.display_name || 'the game') + ':', url: url }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(url).then(() => toast('Roster link copied — send it to your players')).catch(() => toast("Couldn't copy"));
+  }
+}
 function copyShareLink() {
   if (!ORG) return;
   const link = ORG.is_default ? APP_BASE : APP_BASE + '/#/' + ORG.token;
@@ -2365,10 +2375,10 @@ async function bootSingle(token) {
   paintSnapshot(token);         // instant roster from the last snapshot (no "Loading…" flash)
   // In the installed app, expose the "Add a roster" (+) so a 2nd roster is reachable (esp. iOS,
   // where a tapped link opens Safari, not the app). Hidden in a plain browser tab.
-  const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = isStandalone() ? 'flex' : 'none';
+  const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = (isStandalone() || getOrgs().length >= 2) ? 'flex' : 'none';
   // Show the "← My Rosters" home bar when there's a hub to go back to (installed + 2+ rosters).
   const homeBar = document.getElementById('home-bar');
-  if (homeBar) homeBar.style.display = (isStandalone() && getOrgs().length >= 2) ? 'block' : 'none';
+  if (homeBar) homeBar.style.display = (getOrgs().length >= 2) ? 'block' : 'none';
   migrateLegacyAdmin();
   await loadGames();            // full state → sets ORG, applies branding, seeds egr_orgs, renders
   if (!ORG || !ORG.slug) return;  // load failed → loadGames already showed the retry UI
