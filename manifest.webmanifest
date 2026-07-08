@@ -1,6 +1,6 @@
 {
-  "name": "Roster (TEST)",
-  "short_name": "Roster TEST",
+  "name": "Game Roster",
+  "short_name": "Roster",
   "description": "Weekly game signup — type a name, tap I'm in.",
   "start_url": "/?source=pwa",
   "scope": "/",

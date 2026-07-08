@@ -952,6 +952,9 @@ const SUPABASE_URL = 'https://yogymlpqgqjqragrxqgf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvZ3ltbHBxZ3FqcXJhZ3J4cWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyOTg1ODAsImV4cCI6MjA4ODg3NDU4MH0.6D8B_jK-tLi2g32xNTxkJwQGbJLW798ufCt869rPZgw';
 
 const APP_BASE = 'easygameroster.com';
+// Frisbee is the public default roster; its token is deliberately public. The bare URL redirects
+// here so the whole app runs on the tokened path (bare link stays shareable — it just bounces here).
+const DEFAULT_ROSTER_TOKEN = '6gns2XZkj0pD4Wy4k9poXQ';
 
 let adminPass = null;
 let adminName = null;
@@ -2293,6 +2296,13 @@ async function bootSingle(token) {
 function boot() {
   const route = resolveRoute();
   if (route.view === 'combined') { bootCombined(); return; }
+  // Bare URL (no token) → run on the tokened frisbee link. Rewrite the URL in place (no reload)
+  // so everything downstream operates on the token, while old bookmarks to the bare link still work.
+  if (route.token === null) {
+    try { history.replaceState(null, '', '#/' + DEFAULT_ROSTER_TOKEN); } catch (e) {}
+    bootSingle(DEFAULT_ROSTER_TOKEN);
+    return;
+  }
   bootSingle(route.token);
 }
 window.addEventListener('hashchange', () => location.reload());  // drilling in/out re-boots the right view
