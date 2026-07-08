@@ -667,6 +667,23 @@
     .invite-steps { margin: 12px auto 0; max-width: 240px; text-align: left; font-size: 0.82rem; color: #666; line-height: 1.7; padding-left: 18px; }
     .share-row { display: flex; gap: 8px; align-items: center; }
     .share-row input { flex: 1; }
+    /* Home/back bar shown when drilled into a roster from the multi-roster hub */
+    #home-bar { margin: 0 0 14px; }
+    .home-btn { background: none; border: none; color: #1976d2; font-size: 0.95rem; font-weight: 600; cursor: pointer; padding: 4px 0; -webkit-appearance: none; }
+    .home-btn:active { opacity: 0.6; }
+    body.dark .home-btn { color: #8ab0ff; }
+    /* Roster list cards in the "My Rosters" hub */
+    .roster-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; background: #fff; border: 1px solid #e6e6ef; border-radius: 12px; padding: 16px; margin-bottom: 10px; cursor: pointer; -webkit-appearance: none; }
+    .roster-card:active { background: #f5f6fa; }
+    .roster-card-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .roster-card-name { font-size: 1.1rem; font-weight: 700; color: #222; }
+    .roster-card-sub { font-size: 0.85rem; color: #888; }
+    .roster-card-arrow { font-size: 1.6rem; color: #c2c2d0; line-height: 1; }
+    body.dark .roster-card { background: #191a36; border-color: #2c2e5a; }
+    body.dark .roster-card:active { background: #20224a; }
+    body.dark .roster-card-name { color: #ececf7; }
+    body.dark .roster-card-sub { color: #9a9cc8; }
+    body.dark .roster-card-arrow { color: #4a4d80; }
     body.dark .org-group-title, body.dark .invite-card > div:first-child { color: #f3f3fb; }
     body.dark .org-open-btn { background: #20224a; border-color: #383b6e; color: #8ab0ff; }
     body.dark .org-open-btn:active { background: #2a2c57; }
@@ -692,6 +709,8 @@
   <button class="hdr-btn" id="add-roster-btn" onclick="openAddChooser()" aria-label="Add a roster" title="Add a roster" style="display:none;">+</button>
 </div>
 <p class="subtitle">Type a name, tap "I'm in."</p>
+
+<div id="home-bar" style="display:none;"><button class="home-btn" onclick="goHome()">&#8592; My Rosters</button></div>
 
 <div class="notify-bar" id="notify-bar" style="display:none;">
   <button class="btn-notify" id="notify-btn" onclick="toggleNotify()">&#128276; Get game alerts</button>
@@ -2015,6 +2034,20 @@ window.addEventListener('focus', refreshIfIdle);
 
 // ---------- Combined multi-org hub (installed app, >=2 joined orgs) ----------
 function openOrg(token) { location.hash = '#/' + token; }   // drill into that org's single view
+function goHome() {   // back to the "My Rosters" list
+  if (location.hash) location.hash = '';   // → hashchange → re-route to the hub
+  else location.reload();
+}
+// A tappable roster row in the hub list: name + a one-line summary + chevron.
+function rosterCardHtml(token, name, summary) {
+  return `<button class="roster-card" onclick="openOrg('${token}')">
+      <span class="roster-card-text">
+        <span class="roster-card-name">${esc(name || 'Roster')}</span>
+        ${summary ? `<span class="roster-card-sub">${esc(summary)}</span>` : ''}
+      </span>
+      <span class="roster-card-arrow">&#8250;</span>
+    </button>`;
+}
 function removeOrg(token) {
   const orgs = getOrgs().filter(o => o.token !== token);
   setOrgs(orgs);
@@ -2025,15 +2058,12 @@ function removeOrg(token) {
   location.reload();
 }
 function renderOrgGroup(org, games, containerEl) {
-  myNameSet = myNames();
   const live = (games || []).filter(g => g.status === 'live');   // hub is player-only: live games only
-  let html = `<div class="org-group-header">
-      <h2 class="org-group-title">${esc(org.display_name)}</h2>
-      <button class="org-open-btn" onclick="openOrg('${org.token}')">open &#8599;</button>
-    </div>`;
-  if (!live.length) html += `<div class="empty-state" style="padding:20px 16px;">No games scheduled yet.</div>`;
-  else for (const game of live) html += gameCardHtml(game, org, false);
-  containerEl.innerHTML = html;
+  let summary;
+  if (!live.length) summary = 'No games scheduled';
+  else if (live.length === 1) summary = 'Next: ' + formatDate(live[0].game_date);
+  else summary = live.length + ' upcoming games';
+  containerEl.innerHTML = rosterCardHtml(org.token, org.display_name, summary);
 }
 function renderOrgLoadError(o, containerEl) {
   containerEl.innerHTML = `<div class="card">
@@ -2048,9 +2078,9 @@ async function bootCombined() {
   const h1 = document.querySelector('.app-header h1'); if (h1) h1.textContent = 'My Rosters';
   const sub = document.querySelector('.subtitle'); if (sub) sub.textContent = 'All your games in one place';
   const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = 'flex';
-  // hub is player-only — hide the single-view chrome
+  // hub is player-only — hide the single-view chrome (and the home bar; this IS home)
   document.querySelectorAll('.log-section, .admin-toggle').forEach(el => { el.style.display = 'none'; });
-  ['notify-bar', 'archive-section', 'admin-panel', 'add-banner'].forEach(id => {
+  ['notify-bar', 'archive-section', 'admin-panel', 'add-banner', 'home-bar'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('/sw.js'); } catch (e) {} }
@@ -2060,6 +2090,7 @@ async function bootCombined() {
   const sections = orgs.map(o => {
     const s = document.createElement('div');
     s.id = 'org-section-' + o.token;
+    s.innerHTML = rosterCardHtml(o.token, o.display_name, '');   // instant name from cache; summary fills in
     container.appendChild(s);
     return s;
   });
@@ -2247,6 +2278,9 @@ async function bootSingle(token) {
   // In the installed app, expose the "Add a roster" (+) so a 2nd roster is reachable (esp. iOS,
   // where a tapped link opens Safari, not the app). Hidden in a plain browser tab.
   const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = isStandalone() ? 'flex' : 'none';
+  // Show the "← My Rosters" home bar when there's a hub to go back to (installed + 2+ rosters).
+  const homeBar = document.getElementById('home-bar');
+  if (homeBar) homeBar.style.display = (isStandalone() && getOrgs().length >= 2) ? 'block' : 'none';
   migrateLegacyAdmin();
   await loadGames();            // full state → sets ORG, applies branding, seeds egr_orgs, renders
   if (!ORG || !ORG.slug) return;  // load failed → loadGames already showed the retry UI
