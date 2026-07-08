@@ -689,7 +689,7 @@
   <h1>Game Roster</h1>
   <button class="hdr-btn" id="theme-btn" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Dark / light">&#9790;</button>
   <button class="hdr-btn refresh-btn" id="refresh-btn" onclick="manualRefresh()" aria-label="Refresh" title="Refresh">&#8635;</button>
-  <button class="hdr-btn" id="add-roster-btn" onclick="openAddRoster()" aria-label="Add a roster" title="Add a roster" style="display:none;">+</button>
+  <button class="hdr-btn" id="add-roster-btn" onclick="openAddChooser()" aria-label="Add a roster" title="Add a roster" style="display:none;">+</button>
 </div>
 <p class="subtitle">Type a name, tap "I'm in."</p>
 
@@ -773,54 +773,10 @@
     </div>
 
     <div class="card">
-      <h2>Roster settings</h2>
-      <p class="card-intro">Controls how your roster looks at the top of the page and how people find it.</p>
-      <div class="form-group">
-        <label>Name</label>
-        <input type="text" id="org-name-input" placeholder="Roster name">
-        <div class="field-hint">The big title at the top of your roster &mdash; usually your team, group, or league name.</div>
-      </div>
-      <div class="form-group">
-        <label>Subtitle</label>
-        <input type="text" id="org-subtitle-input" placeholder="Shown under the name">
-        <div class="field-hint">A small line under the name. Optional &mdash; leave it blank to hide it.</div>
-      </div>
-      <div class="form-group">
-        <label>Signup message (optional)</label>
-        <input type="text" id="org-notice-input" placeholder="Shown at the top of a copied list">
-        <div class="field-hint">The note that appears at the top and bottom of the list when someone taps <strong>Copy</strong> to paste it into WhatsApp. Leave blank to use the standard &ldquo;sign up here&rdquo; message.</div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-small" onclick="saveOrgBranding()">Save settings</button>
-      </div>
-      <div style="margin-top:18px;">
-        <div class="form-group">
-          <label>Share link</label>
-          <div class="share-row">
-            <input type="text" id="org-share-link" readonly onclick="this.select()">
-            <button class="btn-copy" style="margin-top:0;" onclick="copyShareLink()">Copy</button>
-          </div>
-          <div class="field-hint"><strong>This is all you share.</strong> Send it to your players (WhatsApp, text, email) &mdash; they open it and sign up in their browser, nothing to install. It's also the link anyone using the installed app pastes under &ldquo;Add a roster&rdquo; to add your games to theirs.</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Add Admin</h2>
-      <p class="card-intro">Give someone else admin access to this roster, so they can create and manage games too.</p>
-      <div class="form-group">
-        <label>Name</label>
-        <input type="text" id="new-admin-name" placeholder="Admin name">
-        <div class="field-hint">Just a label so you know who this login belongs to.</div>
-      </div>
-      <div class="form-group">
-        <label>Passphrase</label>
-        <input type="text" id="new-admin-pass" placeholder="Their passphrase">
-        <div class="field-hint">The password they'll type to log in here as admin. Pick one and share it with them &mdash; they enter it under <strong>Admin</strong>.</div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-small" onclick="addAdmin()">Add Admin</button>
-      </div>
+      <h2>Manage roster</h2>
+      <button class="btn-edit" style="display:block;width:100%;margin-bottom:8px;" onclick="openEditRoster()">Edit roster settings</button>
+      <button class="btn-edit" style="display:block;width:100%;margin-bottom:8px;" onclick="openAddAdmin()">Add another admin</button>
+      <button class="btn-edit" style="display:block;width:100%;" onclick="openCreateRoster()">Create a new roster</button>
     </div>
 
     <button class="btn btn-small" style="background:#eee;color:#666;width:100%;margin-top:8px;" onclick="logoutAdmin()">Log out</button>
@@ -868,6 +824,106 @@
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeAddRoster()">Cancel</button>
       <button class="btn-save" onclick="confirmAddRoster()">Add</button>
+    </div>
+  </div>
+</div>
+
+<div id="add-chooser-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeAddChooser()">
+  <div class="modal">
+    <div class="modal-title">Add a roster</div>
+    <button class="copy-option" onclick="closeAddChooser();openAddRoster()">
+      <span class="copy-option-main">Add an existing roster</span>
+      <span class="copy-option-sub">Paste a share link someone gave you</span>
+    </button>
+    <button class="copy-option" onclick="closeAddChooser();openCreateRoster()">
+      <span class="copy-option-main">Create a new roster</span>
+      <span class="copy-option-sub">Start a fresh roster you manage</span>
+    </button>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAddChooser()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="create-roster-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeCreateRoster()">
+  <div class="modal">
+    <div class="modal-title">Create a new roster</div>
+    <div class="form-group">
+      <label>Roster name</label>
+      <input type="text" id="create-name" placeholder="Roster name" onkeydown="if(event.key==='Enter')confirmCreateRoster()">
+      <div class="field-hint">The name shown at the top of this roster.</div>
+    </div>
+    <div class="form-group">
+      <label>Subtitle (optional)</label>
+      <input type="text" id="create-subtitle" placeholder="Shown under the name" onkeydown="if(event.key==='Enter')confirmCreateRoster()">
+      <div class="field-hint">Optional small line under the name.</div>
+    </div>
+    <div class="form-group">
+      <label>Admin passphrase</label>
+      <input type="text" id="create-pass" placeholder="Set an admin passphrase" onkeydown="if(event.key==='Enter')confirmCreateRoster()">
+      <div class="field-hint">The passphrase you'll use to manage this roster. Share it only with people you want as admins.</div>
+    </div>
+    <div id="create-msg" style="display:none;color:#e53935;font-size:0.82rem;margin-top:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeCreateRoster()">Cancel</button>
+      <button class="btn-save" onclick="confirmCreateRoster()">Create roster</button>
+    </div>
+  </div>
+</div>
+
+<div id="edit-roster-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeEditRoster()">
+  <div class="modal">
+    <div class="modal-title">Roster settings</div>
+    <p class="card-intro">Controls how your roster looks at the top of the page and how people find it.</p>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="org-name-input" placeholder="Roster name">
+      <div class="field-hint">The big title at the top of your roster &mdash; usually your team, group, or league name.</div>
+    </div>
+    <div class="form-group">
+      <label>Subtitle</label>
+      <input type="text" id="org-subtitle-input" placeholder="Shown under the name">
+      <div class="field-hint">A small line under the name. Optional &mdash; leave it blank to hide it.</div>
+    </div>
+    <div class="form-group">
+      <label>Signup message (optional)</label>
+      <input type="text" id="org-notice-input" placeholder="Shown at the top of a copied list">
+      <div class="field-hint">The note that appears at the top and bottom of the list when someone taps <strong>Copy</strong> to paste it into WhatsApp. Leave blank to use the standard &ldquo;sign up here&rdquo; message.</div>
+    </div>
+    <div style="margin-top:18px;">
+      <div class="form-group">
+        <label>Share link</label>
+        <div class="share-row">
+          <input type="text" id="org-share-link" readonly onclick="this.select()">
+          <button class="btn-copy" style="margin-top:0;" onclick="copyShareLink()">Copy</button>
+        </div>
+        <div class="field-hint"><strong>This is all you share.</strong> Send it to your players (WhatsApp, text, email) &mdash; they open it and sign up in their browser, nothing to install. It's also the link anyone using the installed app pastes under &ldquo;Add a roster&rdquo; to add your games to theirs.</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeEditRoster()">Cancel</button>
+      <button class="btn-save" onclick="saveOrgBranding()">Save settings</button>
+    </div>
+  </div>
+</div>
+
+<div id="add-admin-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeAddAdmin()">
+  <div class="modal">
+    <div class="modal-title">Add Admin</div>
+    <p class="card-intro">Give someone else admin access to this roster, so they can create and manage games too.</p>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="new-admin-name" placeholder="Admin name">
+      <div class="field-hint">Just a label so you know who this login belongs to.</div>
+    </div>
+    <div class="form-group">
+      <label>Passphrase</label>
+      <input type="text" id="new-admin-pass" placeholder="Their passphrase">
+      <div class="field-hint">The password they'll type to log in here as admin. Pick one and share it with them &mdash; they enter it under <strong>Admin</strong>.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAddAdmin()">Cancel</button>
+      <button class="btn-save" onclick="addAdmin()">Add Admin</button>
     </div>
   </div>
 </div>
@@ -1681,6 +1737,7 @@ async function addAdmin() {
     toast(`${name} added`);
     document.getElementById('new-admin-name').value = '';
     document.getElementById('new-admin-pass').value = '';
+    closeAddAdmin();
   } catch (e) { toast('Error adding admin'); }
 }
 
@@ -2061,6 +2118,73 @@ async function confirmAddRoster() {
   } catch (e) { showAddMsg("Couldn't add that roster. Try again."); }
 }
 
+// ---------- Add-a-roster chooser (installed app) ----------
+function openAddChooser() { document.getElementById('add-chooser-overlay').style.display = 'flex'; }
+function closeAddChooser() { const el = document.getElementById('add-chooser-overlay'); if (el) el.style.display = 'none'; }
+
+// ---------- Create-a-roster modal ----------
+function openCreateRoster() {
+  const name = document.getElementById('create-name');
+  const sub = document.getElementById('create-subtitle');
+  const pass = document.getElementById('create-pass');
+  if (name) name.value = '';
+  if (sub) sub.value = '';
+  if (pass) pass.value = '';
+  const msg = document.getElementById('create-msg'); if (msg) msg.style.display = 'none';
+  document.getElementById('create-roster-overlay').style.display = 'flex';
+  // Focus after the overlay paints (rAF also nudges iOS to render the fixed overlay). No clipboard read.
+  requestAnimationFrame(() => { if (name) name.focus(); });
+}
+function closeCreateRoster() { const el = document.getElementById('create-roster-overlay'); if (el) el.style.display = 'none'; }
+function showCreateMsg(t) {
+  const msg = document.getElementById('create-msg');
+  if (msg) { msg.textContent = t; msg.style.display = 'block'; }
+}
+// Prove the user is an admin of some roster (create_roster requires it). Prefer the current
+// org's live admin session; otherwise scan saved rosters for a stored admin passphrase.
+function adminProof() {
+  if (ORG && ORG.token && adminPass) return { token: ORG.token, pass: adminPass };
+  for (const o of getOrgs()) {
+    const b = readBranding(o.token);
+    const slug = b && b.slug;
+    if (!slug) continue;
+    const p = localStorage.getItem('egr_admin_' + slug);
+    if (p) return { token: o.token, pass: p };
+  }
+  return null;
+}
+async function confirmCreateRoster() {
+  const name = document.getElementById('create-name').value.trim();
+  const pass = document.getElementById('create-pass').value.trim();
+  const subtitle = document.getElementById('create-subtitle').value.trim();
+  if (!name) { showCreateMsg('Give the roster a name.'); return; }
+  if (!pass) { showCreateMsg('Set an admin passphrase.'); return; }
+  const proof = adminProof();
+  if (!proof) { showCreateMsg('You need to be an admin of a roster to create one. Open a roster you manage, log in, then try again.'); return; }
+  try {
+    const r = await rpc('create_roster', { p_proof_token: proof.token, p_proof_pass: proof.pass, p_name: name, p_subtitle: subtitle, p_admin_pass: pass });
+    if (!r || !r.token) { showCreateMsg("Couldn't create the roster. Try again."); return; }
+    // Save it locally and stash the pass so bootSingle auto-logs us in as its admin on load.
+    const orgs = getOrgs();
+    if (!orgs.some(o => o.token === r.token)) { orgs.push({ token: r.token, display_name: r.display_name }); setOrgs(orgs); }
+    setStoredPass(r.slug, pass);
+    closeCreateRoster();
+    toast(`${r.display_name} created`);
+    const target = '#/' + r.token;
+    if (location.hash === target) location.reload();   // hash unchanged → reload to boot into it
+    else location.hash = target;                       // hashchange listener re-boots the single view
+  } catch (e) {
+    if (e && e.message && e.message.indexOf('forbidden') !== -1) showCreateMsg('You need to be an admin to create a roster.');
+    else showCreateMsg("Couldn't create the roster. Try again.");
+  }
+}
+
+// ---------- Edit-roster + add-admin modals (admin, single view) ----------
+function openEditRoster() { renderOrgSettings(); document.getElementById('edit-roster-overlay').style.display = 'flex'; }
+function closeEditRoster() { const el = document.getElementById('edit-roster-overlay'); if (el) el.style.display = 'none'; }
+function openAddAdmin() { document.getElementById('add-admin-overlay').style.display = 'flex'; }
+function closeAddAdmin() { const el = document.getElementById('add-admin-overlay'); if (el) el.style.display = 'none'; }
+
 // ---------- Join affordance (installed app only, viewing a league not yet saved) ----------
 function copyShareLink() {
   if (!ORG) return;
@@ -2107,6 +2231,7 @@ async function saveOrgBranding() {
     cacheBranding(ORG, ROUTE_TOKEN);
     applyBranding(ORG);
     toast('Saved');
+    closeEditRoster();   // guarded — no-op if the edit modal isn't open
   } catch (e) { toast('Error saving'); }
 }
 
