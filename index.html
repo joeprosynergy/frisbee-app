@@ -757,7 +757,7 @@
 <!-- Archives (admin only) -->
 <div class="archive-section" id="archive-section" style="display:none;">
   <button class="archive-toggle" id="archive-toggle" onclick="toggleArchives()">
-    <span>Archived games</span>
+    <span id="archive-toggle-label">Archived games</span>
     <span class="arrow">&#9660;</span>
   </button>
   <div id="archive-container" style="display:none;"></div>
@@ -971,7 +971,7 @@
           <input type="text" id="org-share-link" readonly onclick="this.select()">
           <button class="btn-copy" style="margin-top:0;" onclick="copyShareLink()">Copy</button>
         </div>
-        <div class="field-hint"><strong>This is all you share.</strong> Send it to your players (WhatsApp, text, email) &mdash; they open it and sign up in their browser, nothing to install. It's also the link anyone using the installed app pastes under &ldquo;Add a roster&rdquo; to add your games to theirs.</div>
+        <div class="field-hint" id="share-link-hint"><strong>This is all you share.</strong> Send it to your players (WhatsApp, text, email) &mdash; they open it and sign up in their browser, nothing to install. It's also the link anyone using the installed app pastes under &ldquo;Add a roster&rdquo; to add your games to theirs.</div>
       </div>
     </div>
     <div id="edit-roster-msg" style="display:none;color:#e53935;font-size:0.82rem;margin-top:10px;"></div>
@@ -981,7 +981,7 @@
     </div>
     <div id="roster-danger-zone" style="display:none; margin-top:22px; padding-top:16px; border-top:1px solid rgba(128,128,128,0.2);">
       <button class="btn-danger" style="width:100%;" onclick="openDeleteRoster()">Delete this roster</button>
-      <div class="field-hint">Permanently removes this roster and all its games and signups. Can't be undone.</div>
+      <div class="field-hint" id="delete-roster-hint">Permanently removes this roster and all its games and signups. Can't be undone.</div>
     </div>
   </div>
 </div>
@@ -1009,7 +1009,7 @@
 <div id="add-admin-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeAddAdmin()">
   <div class="modal">
     <div class="modal-title">Add Admin</div>
-    <p class="card-intro">Give someone else admin access to this roster, so they can create and manage games too.</p>
+    <p class="card-intro" id="add-admin-intro">Give someone else admin access to this roster, so they can create and manage games too.</p>
     <div class="form-group">
       <label>Name</label>
       <input type="text" id="new-admin-name" placeholder="Admin name">
@@ -1236,10 +1236,14 @@ function applyTerms(org) {
   setText('create-game-btn', 'Create ' + t.one);
   setText('game-max-label', 'Max ' + t.pMany);
   setText('copy-modal-title', 'Copy which ' + t.oneL + '?');
+  setText('archive-toggle-label', 'Archived ' + t.manyL);
   const gl = document.getElementById('game-label');
   if (gl) gl.placeholder = 'e.g. "6:15pm ' + t.one + '"';
   setHtml('game-label-hint', 'How this ' + esc(t.oneL) + ' is titled in the list, e.g. &ldquo;6:15pm ' + esc(t.one) + '&rdquo; or &ldquo;Sunday Pickup&rdquo;.');
   setHtml('game-maps-hint', 'Adds a &#128205; Location link to the ' + esc(t.oneL) + ' and into the copied message. Paste a Google Maps share link, or leave blank.');
+  setText('delete-roster-hint', 'Permanently removes this roster and all its ' + t.manyL + ' and signups. Can\'t be undone.');
+  setText('add-admin-intro', 'Give someone else admin access to this roster, so they can create and manage ' + t.manyL + ' too.');
+  setHtml('share-link-hint', '<strong>This is all you share.</strong> Send it to your ' + esc(t.pManyL) + ' (WhatsApp, text, email) &mdash; they open it and sign up in their browser, nothing to install. It\'s also the link anyone using the installed app pastes under &ldquo;Add a roster&rdquo; to add your ' + esc(t.manyL) + ' to theirs.');
 }
 
 // Branding: the default/bare org must stay byte-identical to today, so applyBranding
@@ -1466,7 +1470,7 @@ async function loadArchives() {
     }
     const games = r.games || [];
     if (!games.length) {
-      container.innerHTML = '<div class="card"><div class="empty-state" style="padding:16px;">No archived games.</div></div>';
+      container.innerHTML = '<div class="card"><div class="empty-state" style="padding:16px;">No archived ' + esc(T(ORG).manyL) + '.</div></div>';
       return;
     }
 
@@ -1530,7 +1534,7 @@ async function unarchiveGame(gameId) {
     toast(T(ORG).one + ' restored!');
     loadGames();
     loadArchives();
-  } catch (e) { toast('Error unarchiving game'); }
+  } catch (e) { toast('Error unarchiving ' + T(ORG).oneL); }
 }
 
 function playerRow(num, player, gameId) {
@@ -1659,7 +1663,7 @@ async function loadLog(full) {
 
     let html = '<div class="card"><div class="log-list">';
     for (const entry of logs) {
-      const label = entry.label || 'a game';
+      const label = entry.label || ('a ' + T(ORG).oneL);
       let desc = '';
 
       switch (entry.action) {
@@ -1679,7 +1683,7 @@ async function loadLog(full) {
           desc = `<strong>${esc(entry.actor_name)}</strong> published ${esc(entry.player_name || label)}`;
           break;
         case 'game_deleted':
-          desc = `<strong>${esc(entry.actor_name)}</strong> deleted ${esc(entry.player_name || 'a game')}`;
+          desc = `<strong>${esc(entry.actor_name)}</strong> deleted ${esc(entry.player_name || ('a ' + T(ORG).oneL))}`;
           break;
         default:
           desc = `${esc(entry.action)}`;
@@ -1761,7 +1765,7 @@ async function createGame() {
     document.getElementById('game-label').value = '';
     document.getElementById('game-maps').value = '';
     loadGames();
-  } catch (e) { toast('Error creating game'); }
+  } catch (e) { toast('Error creating ' + T(ORG).oneL); }
 }
 
 // "Copy last week" → pop a picker of recent games (any status, incl. archived) so the
@@ -1795,7 +1799,7 @@ async function openCopyPicker() {
         <span class="copy-option-sub">${formatDate(g.game_date)} &middot; ${formatTime(g.game_time)}</span>
       </button>`).join('');
     document.getElementById('copy-modal-overlay').style.display = 'flex';
-  } catch (e) { toast('Couldn\'t load recent games'); }
+  } catch (e) { toast("Couldn't load recent " + T(ORG).manyL); }
 }
 
 function closeCopyModal() {
@@ -1865,7 +1869,7 @@ async function saveEditGame(gameId) {
     await rpc('update_game', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId, p_date: date, p_time: time, p_label: label, p_max_players: max, p_maps_link: maps || null });
     toast(T(ORG).one + ' updated');
     loadGames();
-  } catch (e) { toast('Error updating game'); }
+  } catch (e) { toast('Error updating ' + T(ORG).oneL); }
 }
 
 async function publishGame(gameId) {
@@ -1873,7 +1877,7 @@ async function publishGame(gameId) {
     await rpc('publish_game', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId });
     toast(T(ORG).one + ' is live!');
     loadGames();
-  } catch (e) { toast('Error publishing game'); }
+  } catch (e) { toast('Error publishing ' + T(ORG).oneL); }
 }
 
 async function deleteGame(gameId) {
@@ -1961,7 +1965,7 @@ async function refreshNotifyState() {
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   if (isIOS && !standalone) {
-    btn.textContent = '🔔 Get game alerts';
+    btn.textContent = '🔔 Get ' + T(ORG).oneL + ' alerts';
     btn.classList.remove('on');
     hint.textContent = 'On iPhone: tap Share → Add to Home Screen, then open it from your home screen and turn alerts on.';
     return;
@@ -1974,7 +1978,7 @@ async function refreshNotifyState() {
   }
   const sub = swReg && await swReg.pushManager.getSubscription();
   if (sub && subKeyMatches(sub)) { btn.textContent = '🔔 Alerts on ✓'; btn.classList.add('on'); }
-  else { btn.textContent = '🔔 Get game alerts'; btn.classList.remove('on'); }
+  else { btn.textContent = '🔔 Get ' + T(ORG).oneL + ' alerts'; btn.classList.remove('on'); }
 }
 
 async function toggleNotify() {
@@ -2014,7 +2018,7 @@ async function toggleNotify() {
     const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY) });
     try {
       await storeSubscription(sub);
-      toast("Done — you'll get game alerts on this device 🔔", 4000);
+      toast("Done — you'll get " + T(ORG).oneL + " alerts on this device 🔔", 4000);
     } catch (e) {
       console.error('subscription save failed', e);
       toast('Could not save your subscription. Try again.');
