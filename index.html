@@ -16,9 +16,9 @@
     try {
       var U = 'https://yogymlpqgqjqragrxqgf.supabase.co';
       var K = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvZ3ltbHBxZ3FqcXJhZ3J4cWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyOTg1ODAsImV4cCI6MjA4ODg3NDU4MH0.6D8B_jK-tLi2g32xNTxkJwQGbJLW798ufCt869rPZgw';
-      // Multi-org: the org is derived server-side from the token in the URL (#/<token>).
-      // No token → p_token:null → server returns the DEFAULT org (frisbee).
-      var m = location.hash.match(/^#\/([A-Za-z0-9_-]{16,})/);
+      // Multi-org: the org is derived server-side from the identifier in the URL (#/<token>
+      // or #/<custom-link>). No identifier → p_token:null → server returns the DEFAULT org (frisbee).
+      var m = location.hash.match(/^#\/([A-Za-z0-9_-]{2,})/);
       var token = m ? m[1] : null;
       var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
       var orgs = [];
@@ -510,6 +510,11 @@
       width: 100%;
       max-width: 360px;
       box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+      /* Tall modals (roster settings/create) must scroll instead of clipping off-screen. */
+      max-height: calc(100vh - 48px);
+      max-height: calc(100dvh - 48px);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
     .modal-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 14px; }
     .modal .form-group label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 6px; }
@@ -785,7 +790,7 @@
 
   <div id="admin-tools" style="display:none;">
     <div class="card">
-      <h2>Create Game</h2>
+      <h2 id="create-game-title">Create Game</h2>
       <button class="glow-btn" style="margin:0 0 12px;" onclick="openCopyPicker()">&#8635; Copy last week</button>
       <div class="form-group">
         <label>Date</label>
@@ -798,20 +803,20 @@
       <div class="form-group">
         <label>Label</label>
         <input type="text" id="game-label" placeholder='e.g. "6:15pm Game"'>
-        <div class="field-hint">How this game is titled in the list, e.g. &ldquo;6:15pm Game&rdquo; or &ldquo;Sunday Pickup&rdquo;.</div>
+        <div class="field-hint" id="game-label-hint">How this game is titled in the list, e.g. &ldquo;6:15pm Game&rdquo; or &ldquo;Sunday Pickup&rdquo;.</div>
       </div>
       <div class="form-group">
-        <label>Max Players</label>
+        <label id="game-max-label">Max Players</label>
         <input type="number" id="game-max" value="18" min="2" max="50">
         <div class="field-hint">How many spots are on the roster. Anyone who signs up after it's full goes on the waitlist.</div>
       </div>
       <div class="form-group">
         <label>Google Maps link (optional)</label>
         <input type="url" id="game-maps" placeholder="Paste a Google Maps link">
-        <div class="field-hint">Adds a &#128205; Location link to the game and into the copied message. Paste a Google Maps share link, or leave blank.</div>
+        <div class="field-hint" id="game-maps-hint">Adds a &#128205; Location link to the game and into the copied message. Paste a Google Maps share link, or leave blank.</div>
       </div>
       <div class="form-actions">
-        <button class="btn btn-small" onclick="createGame()">Create Game</button>
+        <button class="btn btn-small" id="create-game-btn" onclick="createGame()">Create Game</button>
       </div>
     </div>
 
@@ -831,7 +836,7 @@
 
 <div id="copy-modal-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeCopyModal()">
   <div class="modal">
-    <div class="modal-title">Copy which game?</div>
+    <div class="modal-title" id="copy-modal-title">Copy which game?</div>
     <div id="copy-options"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeCopyModal()">Cancel</button>
@@ -903,6 +908,16 @@
       <div class="field-hint">Optional small line under the name.</div>
     </div>
     <div class="form-group">
+      <label>Word for each event (optional)</label>
+      <input type="text" id="create-event-term" placeholder="Game" autocapitalize="words" autocorrect="off" oninput="updateCreateTermHints()">
+      <div class="field-hint">What you'll call each one &mdash; e.g. Class, Session, Event. <span id="create-event-term-hint"></span> Leave blank for &ldquo;Game&rdquo;.</div>
+    </div>
+    <div class="form-group">
+      <label>Word for each person (optional)</label>
+      <input type="text" id="create-person-term" placeholder="Player" autocapitalize="words" autocorrect="off" oninput="updateCreateTermHints()">
+      <div class="field-hint">What you'll call the people who sign up &mdash; e.g. Student, Kid, Member. <span id="create-person-term-hint"></span> Leave blank for &ldquo;Player&rdquo;.</div>
+    </div>
+    <div class="form-group">
       <label>Admin passphrase</label>
       <input type="text" id="create-pass" placeholder="Set an admin passphrase" onkeydown="if(event.key==='Enter')confirmCreateRoster()">
       <div class="field-hint">The passphrase you'll use to manage this roster. Share it only with people you want as admins.</div>
@@ -934,7 +949,22 @@
       <input type="text" id="org-notice-input" placeholder="Shown at the top of a copied list">
       <div class="field-hint">The note that appears at the top and bottom of the list when someone taps <strong>Copy</strong> to paste it into WhatsApp. Leave blank to use the standard &ldquo;sign up here&rdquo; message.</div>
     </div>
+    <div class="form-group">
+      <label>Word for each event</label>
+      <input type="text" id="org-event-term-input" placeholder="Game" autocapitalize="words" autocorrect="off" oninput="updateTermHints()">
+      <div class="field-hint">What this roster calls each one &mdash; e.g. Class, Session, Event, Practice. <span id="org-event-term-hint"></span> Leave blank to use &ldquo;Game&rdquo;.</div>
+    </div>
+    <div class="form-group">
+      <label>Word for each person</label>
+      <input type="text" id="org-person-term-input" placeholder="Player" autocapitalize="words" autocorrect="off" oninput="updateTermHints()">
+      <div class="field-hint">What this roster calls the people who sign up &mdash; e.g. Student, Kid, Member. <span id="org-person-term-hint"></span> Leave blank to use &ldquo;Player&rdquo;.</div>
+    </div>
     <div style="margin-top:18px;">
+      <div class="form-group" id="org-custom-slug-group">
+        <label>Custom link</label>
+        <input type="text" id="org-custom-slug-input" placeholder="e.g. homeschool" autocapitalize="off" autocorrect="off" spellcheck="false" oninput="updateSlugPreview()">
+        <div class="field-hint">A clean, memorable link people can read &mdash; letters, numbers and dashes only. Must be unique; if it's taken you'll be asked to pick another. Your original token link keeps working too. <span id="org-slug-preview" style="display:block;margin-top:4px;color:#1976d2;word-break:break-all;"></span></div>
+      </div>
       <div class="form-group">
         <label>Share link</label>
         <div class="share-row">
@@ -944,6 +974,7 @@
         <div class="field-hint"><strong>This is all you share.</strong> Send it to your players (WhatsApp, text, email) &mdash; they open it and sign up in their browser, nothing to install. It's also the link anyone using the installed app pastes under &ldquo;Add a roster&rdquo; to add your games to theirs.</div>
       </div>
     </div>
+    <div id="edit-roster-msg" style="display:none;color:#e53935;font-size:0.82rem;margin-top:10px;"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeEditRoster()">Cancel</button>
       <button class="btn-save" onclick="saveOrgBranding()">Save settings</button>
@@ -1001,6 +1032,10 @@ const SUPABASE_URL = 'https://yogymlpqgqjqragrxqgf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvZ3ltbHBxZ3FqcXJhZ3J4cWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyOTg1ODAsImV4cCI6MjA4ODg3NDU4MH0.6D8B_jK-tLi2g32xNTxkJwQGbJLW798ufCt869rPZgw';
 
 const APP_BASE = 'easygameroster.com';
+// Host used when BUILDING a shareable link. On prod it's the canonical domain (so frisbee's
+// copy stays byte-identical). On a preview deploy it's the actual host, so the links the app
+// shows you resolve on the very preview you're testing — not the not-yet-updated live site.
+const LINK_HOST = (typeof location !== 'undefined' && location.host && location.host.indexOf('easygameroster.com') === -1) ? location.host : APP_BASE;
 // Frisbee is the public default roster; its token is deliberately public. The bare URL redirects
 // here so the whole app runs on the tokened path (bare link stays shareable — it just bounces here).
 const DEFAULT_ROSTER_TOKEN = '6gns2XZkj0pD4Wy4k9poXQ';
@@ -1129,7 +1164,8 @@ const byCreated = (a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b
 
 // ---------- Multi-org routing + state ----------
 function parseToken() {
-  const m = location.hash.match(/^#\/([A-Za-z0-9_-]{16,})/);
+  // Matches a token OR a short custom link (#/homeschool); the server resolves either.
+  const m = location.hash.match(/^#\/([A-Za-z0-9_-]{2,})/);
   return m ? m[1] : null;
 }
 function getOrgs() {
@@ -1164,6 +1200,48 @@ async function loadState(token, pass) {
   return r;
 }
 
+// ---------- Per-roster terminology ("language") ----------
+// Each roster can rename its event word (Game→Class) and its people word (Player→Student).
+// The DEFAULT/frisbee roster stores NULL for both, so the fallbacks reproduce today's exact
+// wording ("Game"/"Games"/"Player"/"Players") — its copy stays byte-identical.
+function pluralize(w) {
+  w = (w || '').trim();
+  if (!w) return '';
+  if (/[^aeiouAEIOU]y$/.test(w)) return w.slice(0, -1) + 'ies';   // Activity → Activities
+  if (/(s|x|z|ch|sh)$/i.test(w)) return w + 'es';                 // Class → Classes, Match → Matches
+  return w + 's';                                                 // Session → Sessions
+}
+function T(org) {
+  org = org || ORG || {};
+  const one = org.event_term || 'Game';
+  const many = org.event_term_plural || (org.event_term ? pluralize(org.event_term) : 'Games');
+  const pOne = org.person_term || 'Player';
+  const pMany = org.person_term_plural || (org.person_term ? pluralize(org.person_term) : 'Players');
+  return {
+    one, many, pOne, pMany,
+    custom: !!(org.event_term || org.person_term),
+    oneL: one.toLowerCase(), manyL: many.toLowerCase(), pManyL: pMany.toLowerCase()
+  };
+}
+// The identifier used in a shareable link: a custom vanity link if the roster set one,
+// otherwise its token. Old token links keep working either way (server resolves both).
+function shareId(org) { org = org || ORG || {}; return org.custom_slug || org.token; }
+
+// Paint the roster's chosen words into the always-present admin-panel chrome.
+function applyTerms(org) {
+  const t = T(org);
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const setHtml = (id, v) => { const el = document.getElementById(id); if (el) el.innerHTML = v; };
+  setText('create-game-title', 'Create ' + t.one);
+  setText('create-game-btn', 'Create ' + t.one);
+  setText('game-max-label', 'Max ' + t.pMany);
+  setText('copy-modal-title', 'Copy which ' + t.oneL + '?');
+  const gl = document.getElementById('game-label');
+  if (gl) gl.placeholder = 'e.g. "6:15pm ' + t.one + '"';
+  setHtml('game-label-hint', 'How this ' + esc(t.oneL) + ' is titled in the list, e.g. &ldquo;6:15pm ' + esc(t.one) + '&rdquo; or &ldquo;Sunday Pickup&rdquo;.');
+  setHtml('game-maps-hint', 'Adds a &#128205; Location link to the ' + esc(t.oneL) + ' and into the copied message. Paste a Google Maps share link, or leave blank.');
+}
+
 // Branding: the default/bare org must stay byte-identical to today, so applyBranding
 // simply writes the org's own display_name/subtitle (default org's DB values == today's).
 function applyBranding(org) {
@@ -1174,12 +1252,15 @@ function applyBranding(org) {
   if (h1) h1.textContent = title;
   const sub = document.querySelector('.subtitle');
   if (sub) sub.textContent = org.subtitle || '';
+  applyTerms(org);
 }
 function cacheBranding(org, routeToken) {
   try {
     localStorage.setItem('egr_org_' + (routeToken || 'default'), JSON.stringify({
       display_name: org.display_name, subtitle: org.subtitle, is_default: org.is_default,
-      slug: org.slug, invite_code: org.invite_code, token: org.token, signup_notice: org.signup_notice
+      slug: org.slug, invite_code: org.invite_code, token: org.token, signup_notice: org.signup_notice,
+      custom_slug: org.custom_slug, event_term: org.event_term, event_term_plural: org.event_term_plural,
+      person_term: org.person_term, person_term_plural: org.person_term_plural
     }));
   } catch (e) {}
 }
@@ -1247,7 +1328,11 @@ async function loadGames() {
       } catch (e) {}
     }
   } catch (e) {
-    container.innerHTML = '<div class="empty-state">Couldn\'t load &mdash; your connection may be slow.<br><button class="btn-copy" style="margin-top:12px;" onclick="loadGames()">Retry</button></div>';
+    if (e && e.message === 'invalid_token') {
+      container.innerHTML = '<div class="empty-state">Roster not found.<br><span style="font-size:0.85rem;color:#888;display:inline-block;margin-top:6px;">This link doesn\'t match a roster. Check you have the exact link the organizer shared.</span></div>';
+    } else {
+      container.innerHTML = '<div class="empty-state">Couldn\'t load &mdash; your connection may be slow.<br><button class="btn-copy" style="margin-top:12px;" onclick="loadGames()">Retry</button></div>';
+    }
     console.error(e);
   }
 }
@@ -1261,6 +1346,7 @@ function gameCardHtml(game, org, admin) {
   const waitlist = players.slice(game.max_players);
   const spotsLeft = Math.max(0, game.max_players - roster.length);
   const isDraft = game.status === 'draft';
+  const t = T(org);
 
   // Store data for copy / signup routing
   gamesData[game.id] = { game, roster, waitlist };
@@ -1282,7 +1368,7 @@ function gameCardHtml(game, org, admin) {
         </div>`;
 
   if (roster.length) {
-    html += `<div class="roster"><div class="roster-title">Playing (${roster.length}/${game.max_players})</div>`;
+    html += `<div class="roster"><div class="roster-title">${t.custom ? esc(t.pMany) : 'Playing'} (${roster.length}/${game.max_players})</div>`;
     roster.forEach((p, i) => { html += playerRow(i + 1, p, game.id); });
     html += `</div>`;
   }
@@ -1307,7 +1393,7 @@ function gameCardHtml(game, org, admin) {
     html += `<div class="game-admin-actions">`;
     html += `<button class="btn-edit" onclick="toggleEditGame('${game.id}')">Edit</button>`;
     if (isDraft) html += `<button class="btn-publish" onclick="publishGame('${game.id}')">Go Live</button>`;
-    html += `<button class="btn-danger btn-small" onclick="deleteGame('${game.id}')">Delete Game</button>
+    html += `<button class="btn-danger btn-small" onclick="deleteGame('${game.id}')">Delete ${esc(t.one)}</button>
         </div>`;
     html += `<div class="edit-form" id="edit-form-${game.id}" style="display:none;">
           <div class="form-group">
@@ -1346,7 +1432,7 @@ function renderGames(games) {
   myNameSet = myNames();
   const archiveSection = document.getElementById('archive-section');
   if (!games || !games.length) {
-    container.innerHTML = '<div class="empty-state">No games scheduled yet.</div>';
+    container.innerHTML = '<div class="empty-state">No ' + esc(T(ORG).manyL) + ' scheduled yet.</div>';
     if (archiveSection) archiveSection.style.display = adminPass ? 'block' : 'none';
     return;
   }
@@ -1384,6 +1470,7 @@ async function loadArchives() {
       return;
     }
 
+    const t = T(ORG);
     let html = '';
     for (const game of games) {
       const players = (game.signups || []).slice().sort(byCreated);
@@ -1405,7 +1492,7 @@ async function loadArchives() {
         </div>`;
 
       if (roster.length) {
-        html += `<div class="roster"><div class="roster-title">Played (${roster.length})</div>`;
+        html += `<div class="roster"><div class="roster-title">${t.custom ? esc(t.pMany) : 'Played'} (${roster.length})</div>`;
         roster.forEach((p, i) => {
           html += `<div class="player-row" style="cursor:default;">
             <span class="player-num">${i + 1}</span>
@@ -1428,7 +1515,7 @@ async function loadArchives() {
 
       html += `<div class="game-admin-actions">
         <button class="btn-unarchive" onclick="unarchiveGame('${game.id}')">Unarchive</button>
-        <button class="btn-danger btn-small" onclick="deleteGame('${game.id}')">Delete Game</button>
+        <button class="btn-danger btn-small" onclick="deleteGame('${game.id}')">Delete ${esc(t.one)}</button>
       </div></div>`;
     }
     container.innerHTML = html;
@@ -1440,7 +1527,7 @@ async function loadArchives() {
 async function unarchiveGame(gameId) {
   try {
     await rpc('unarchive_game', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId });
-    toast('Game restored!');
+    toast(T(ORG).one + ' restored!');
     loadGames();
     loadArchives();
   } catch (e) { toast('Error unarchiving game'); }
@@ -1670,7 +1757,7 @@ async function createGame() {
   try {
     // create_game logs the creation server-side.
     await rpc('create_game', { p_token: ORG.token, p_pass: adminPass, p_date: date, p_time: time, p_label: label, p_max_players: max, p_maps_link: maps || null });
-    toast('Game created!');
+    toast(T(ORG).one + ' created!');
     document.getElementById('game-label').value = '';
     document.getElementById('game-maps').value = '';
     loadGames();
@@ -1692,7 +1779,7 @@ async function openCopyPicker() {
     let recent = [];
     if (state && state.games) recent = recent.concat(state.games);
     if (arch && arch.games) recent = recent.concat(arch.games);
-    if (!recent.length) { toast('No previous game to copy yet'); return; }
+    if (!recent.length) { toast('No previous ' + T(ORG).oneL + ' to copy yet'); return; }
     recent.sort((a, b) => (b.game_date + b.game_time).localeCompare(a.game_date + a.game_time));
     recent = recent.slice(0, 12);
     // Show games from roughly the last couple of weeks; if there's been a long gap,
@@ -1730,7 +1817,7 @@ function pickCopyGame(i) {
   document.getElementById('game-max').value = g.max_players || 18;
   document.getElementById('game-maps').value = g.maps_link || '';
   closeCopyModal();
-  toast(`Copied "${g.label}" → ${formatDate(iso)}. Check it, then Create Game.`, 4000);
+  toast(`Copied "${g.label}" → ${formatDate(iso)}. Check it, then Create ${T(ORG).one}.`, 4000);
 }
 
 function copyList(gameId) {
@@ -1738,7 +1825,7 @@ function copyList(gameId) {
   if (!d) return;
   const { game, roster, waitlist } = d;
   const org = gameOrg[gameId] || ORG || {};
-  const link = org.is_default ? APP_BASE : APP_BASE + '/#/' + org.token;
+  const link = org.is_default ? LINK_HOST : LINK_HOST + '/#/' + shareId(org);
   // Default org keeps today's exact message. A custom signup_notice wins; otherwise a
   // sensible per-org default that carries the org's own link.
   let notice;
@@ -1776,7 +1863,7 @@ async function saveEditGame(gameId) {
 
   try {
     await rpc('update_game', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId, p_date: date, p_time: time, p_label: label, p_max_players: max, p_maps_link: maps || null });
-    toast('Game updated');
+    toast(T(ORG).one + ' updated');
     loadGames();
   } catch (e) { toast('Error updating game'); }
 }
@@ -1784,13 +1871,13 @@ async function saveEditGame(gameId) {
 async function publishGame(gameId) {
   try {
     await rpc('publish_game', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId });
-    toast('Game is live!');
+    toast(T(ORG).one + ' is live!');
     loadGames();
   } catch (e) { toast('Error publishing game'); }
 }
 
 async function deleteGame(gameId) {
-  if (!confirm('Delete this game and all signups?')) return;
+  if (!confirm('Delete this ' + T(ORG).oneL + ' and all signups?')) return;
   try {
     // delete_game logs the deletion server-side.
     await rpc('delete_game', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId });
@@ -2110,11 +2197,12 @@ function removeOrg(token) {
   location.reload();
 }
 function renderOrgGroup(org, games, containerEl) {
+  const t = T(org);
   const live = (games || []).filter(g => g.status === 'live');   // hub is player-only: live games only
   let summary;
-  if (!live.length) summary = 'No games scheduled';
+  if (!live.length) summary = 'No ' + t.manyL + ' scheduled';
   else if (live.length === 1) summary = 'Next: ' + formatDate(live[0].game_date);
-  else summary = live.length + ' upcoming games';
+  else summary = live.length + ' upcoming ' + t.manyL;
   containerEl.innerHTML = rosterCardHtml(org.token, org.display_name, summary);
 }
 function renderOrgLoadError(o, containerEl) {
@@ -2128,7 +2216,7 @@ async function bootCombined() {
   ORG = null;
   document.title = 'My Rosters';
   const h1 = document.querySelector('.app-header h1'); if (h1) h1.textContent = 'My Rosters';
-  const sub = document.querySelector('.subtitle'); if (sub) sub.textContent = 'All your games in one place';
+  const sub = document.querySelector('.subtitle'); if (sub) sub.textContent = 'All your rosters in one place';
   const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = 'flex';
   // hub is player-only — hide the single-view chrome (and the home bar; this IS home)
   document.querySelectorAll('.log-section, .admin-toggle').forEach(el => { el.style.display = 'none'; });
@@ -2172,10 +2260,11 @@ function showAddMsg(t) {
   const msg = document.getElementById('add-roster-msg');
   if (msg) { msg.textContent = t; msg.style.display = 'block'; }
 }
-// Pull a roster token out of whatever was pasted — a full share link (…/#/<token>) or a bare token.
+// Pull a roster identifier out of whatever was pasted — a full share link (…/#/<token-or-link>)
+// or a bare token. The server resolves a token or a custom link equally.
 function parseTokenFrom(text) {
   const t = (text || '').trim();
-  const m = t.match(/#\/([A-Za-z0-9_-]{16,})/) || t.match(/^([A-Za-z0-9_-]{16,})$/);
+  const m = t.match(/#\/([A-Za-z0-9_-]{2,})/) || t.match(/^([A-Za-z0-9_-]{16,})$/);
   return m ? m[1] : null;
 }
 async function pasteRosterLink() {
@@ -2213,6 +2302,8 @@ function openCreateRoster() {
   if (name) name.value = '';
   if (sub) sub.value = '';
   if (pass) pass.value = '';
+  ['create-event-term', 'create-person-term'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  updateCreateTermHints();
   const msg = document.getElementById('create-msg'); if (msg) msg.style.display = 'none';
   document.getElementById('create-roster-overlay').style.display = 'flex';
   // Focus after the overlay paints (rAF also nudges iOS to render the fixed overlay). No clipboard read.
@@ -2240,12 +2331,16 @@ async function confirmCreateRoster() {
   const name = document.getElementById('create-name').value.trim();
   const pass = document.getElementById('create-pass').value.trim();
   const subtitle = document.getElementById('create-subtitle').value.trim();
+  const ev = (document.getElementById('create-event-term').value || '').trim();
+  const pe = (document.getElementById('create-person-term').value || '').trim();
   if (!name) { showCreateMsg('Give the roster a name.'); return; }
   if (!pass) { showCreateMsg('Set an admin passphrase.'); return; }
   const proof = adminProof();
   if (!proof) { showCreateMsg('You need to be an admin of a roster to create one. Open a roster you manage, log in, then try again.'); return; }
   try {
-    const r = await rpc('create_roster', { p_proof_token: proof.token, p_proof_pass: proof.pass, p_name: name, p_subtitle: subtitle, p_admin_pass: pass });
+    const r = await rpc('create_roster', { p_proof_token: proof.token, p_proof_pass: proof.pass, p_name: name, p_subtitle: subtitle, p_admin_pass: pass,
+      p_event_term: ev || null, p_event_term_plural: ev ? pluralize(ev) : null,
+      p_person_term: pe || null, p_person_term_plural: pe ? pluralize(pe) : null });
     if (!r || !r.token) { showCreateMsg("Couldn't create the roster. Try again."); return; }
     // Save it locally and stash the pass so bootSingle auto-logs us in as its admin on load.
     const orgs = getOrgs();
@@ -2306,16 +2401,16 @@ function closeAddAdmin() { const el = document.getElementById('add-admin-overlay
 // ---------- Join affordance (installed app only, viewing a league not yet saved) ----------
 function shareRosterLink() {
   if (!ORG) return;
-  const url = 'https://' + (ORG.is_default ? APP_BASE : APP_BASE + '/#/' + ORG.token);
+  const url = 'https://' + (ORG.is_default ? LINK_HOST : LINK_HOST + '/#/' + shareId(ORG));
   if (navigator.share) {
-    navigator.share({ title: ORG.display_name || 'Game Roster', text: 'Sign up for ' + (ORG.display_name || 'the game') + ':', url: url }).catch(() => {});
+    navigator.share({ title: ORG.display_name || 'Game Roster', text: 'Sign up for ' + (ORG.display_name || ('the ' + T(ORG).oneL)) + ':', url: url }).catch(() => {});
   } else {
-    navigator.clipboard.writeText(url).then(() => toast('Roster link copied — send it to your players')).catch(() => toast("Couldn't copy"));
+    navigator.clipboard.writeText(url).then(() => toast('Roster link copied — send it to your ' + T(ORG).pManyL)).catch(() => toast("Couldn't copy"));
   }
 }
 function copyShareLink() {
   if (!ORG) return;
-  const link = ORG.is_default ? APP_BASE : APP_BASE + '/#/' + ORG.token;
+  const link = ORG.is_default ? LINK_HOST : LINK_HOST + '/#/' + shareId(ORG);
   navigator.clipboard.writeText(link).then(() => toast('Share link copied')).catch(() => toast("Couldn't copy"));
 }
 function joinCurrentOrg() {
@@ -2339,29 +2434,89 @@ function maybeShowJoinAffordances(token) {
 }
 
 // ---------- Org branding editor (admin, single view) ----------
+function valOf(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function showEditMsg(t) {
+  const msg = document.getElementById('edit-roster-msg');
+  if (msg) { msg.textContent = t; msg.style.display = 'block'; }
+}
+// Live "(plural: Classes)" hint so the admin sees the plural we'll show, no surprises.
+function termHint(inputId, hintId) {
+  const v = valOf(inputId);
+  const el = document.getElementById(hintId);
+  if (el) el.textContent = v ? ('Plural: ' + pluralize(v) + '.') : '';
+}
+function updateTermHints() {
+  termHint('org-event-term-input', 'org-event-term-hint');
+  termHint('org-person-term-input', 'org-person-term-hint');
+}
+function updateCreateTermHints() {
+  termHint('create-event-term', 'create-event-term-hint');
+  termHint('create-person-term', 'create-person-term-hint');
+}
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;   // 3–30 chars, no leading/trailing dash
+// Sanitize as they type and show the resulting link live.
+function updateSlugPreview() {
+  const el = document.getElementById('org-custom-slug-input');
+  const pv = document.getElementById('org-slug-preview');
+  if (el) {
+    const clean = el.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (el.value !== clean) el.value = clean;
+  }
+  if (pv) { const s = el ? el.value : ''; pv.textContent = s ? ('Link: ' + LINK_HOST + '/#/' + s) : ''; }
+}
 function renderOrgSettings() {
   if (!ORG) return;
-  const n = document.getElementById('org-name-input'); if (n) n.value = ORG.display_name || '';
-  const s = document.getElementById('org-subtitle-input'); if (s) s.value = ORG.subtitle || '';
-  const nt = document.getElementById('org-notice-input'); if (nt) nt.value = ORG.signup_notice || '';
-  const sl = document.getElementById('org-share-link'); if (sl) sl.value = ORG.is_default ? APP_BASE : APP_BASE + '/#/' + ORG.token;
-  // Delete is offered only for non-default rosters (the default/frisbee roster can't be deleted).
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('org-name-input', ORG.display_name || '');
+  set('org-subtitle-input', ORG.subtitle || '');
+  set('org-notice-input', ORG.signup_notice || '');
+  set('org-event-term-input', ORG.event_term || '');
+  set('org-person-term-input', ORG.person_term || '');
+  set('org-custom-slug-input', ORG.custom_slug || '');
+  const sl = document.getElementById('org-share-link'); if (sl) sl.value = ORG.is_default ? LINK_HOST : LINK_HOST + '/#/' + shareId(ORG);
+  // Custom link + delete are only for a non-default roster (the default shares the bare URL and can't be deleted).
+  const cg = document.getElementById('org-custom-slug-group'); if (cg) cg.style.display = ORG.is_default ? 'none' : 'block';
   const dz = document.getElementById('roster-danger-zone'); if (dz) dz.style.display = ORG.is_default ? 'none' : 'block';
+  const msg = document.getElementById('edit-roster-msg'); if (msg) msg.style.display = 'none';
+  updateTermHints();
+  updateSlugPreview();
 }
 async function saveOrgBranding() {
   if (!ORG) return;
-  const dn = document.getElementById('org-name-input').value.trim();
-  const st = document.getElementById('org-subtitle-input').value.trim();
-  const nt = document.getElementById('org-notice-input').value.trim();
-  if (!dn) { toast('A name is required'); return; }
+  const dn = valOf('org-name-input');
+  const st = valOf('org-subtitle-input');
+  const nt = valOf('org-notice-input');
+  const ev = valOf('org-event-term-input');
+  const pe = valOf('org-person-term-input');
+  const slug = valOf('org-custom-slug-input').toLowerCase();
+  if (!dn) { showEditMsg('A name is required.'); return; }
+  if (slug && !SLUG_RE.test(slug)) { showEditMsg('Custom link must be 3–30 characters: lowercase letters, numbers and dashes only.'); return; }
+  // '' clears a term/link back to the default; a value sets it. (create-side plurals computed here too.)
+  const params = {
+    p_token: ORG.token, p_pass: adminPass,
+    p_display_name: dn, p_subtitle: st, p_signup_notice: nt,
+    p_event_term: ev, p_event_term_plural: ev ? pluralize(ev) : '',
+    p_person_term: pe, p_person_term_plural: pe ? pluralize(pe) : ''
+  };
+  if (!ORG.is_default) params.p_custom_slug = slug;   // default org keeps the bare URL
   try {
-    await rpc('set_org_branding', { p_token: ORG.token, p_pass: adminPass, p_display_name: dn, p_subtitle: st, p_signup_notice: nt });
-    ORG.display_name = dn; ORG.subtitle = st; ORG.signup_notice = nt;
+    await rpc('set_org_branding', params);
+    ORG.display_name = dn; ORG.subtitle = st; ORG.signup_notice = nt || null;
+    ORG.event_term = ev || null; ORG.event_term_plural = ev ? pluralize(ev) : null;
+    ORG.person_term = pe || null; ORG.person_term_plural = pe ? pluralize(pe) : null;
+    if (!ORG.is_default) ORG.custom_slug = slug || null;
     cacheBranding(ORG, ROUTE_TOKEN);
     applyBranding(ORG);
     toast('Saved');
-    closeEditRoster();   // guarded — no-op if the edit modal isn't open
-  } catch (e) { toast('Error saving'); }
+    closeEditRoster();       // guarded — no-op if the edit modal isn't open
+    refreshCurrentView();    // re-render cards with the new words
+  } catch (e) {
+    const m = String((e && e.message) || '');
+    if (m.includes('slug_taken')) showEditMsg('That custom link is already taken — try another (e.g. add your group name).');
+    else if (m.includes('slug_invalid')) showEditMsg('Custom link must be 3–30 characters: lowercase letters, numbers and dashes only.');
+    else if (m.includes('forbidden')) showEditMsg('You need to be logged in as an admin to save.');
+    else showEditMsg("Couldn't save. Try again.");
+  }
 }
 
 // ---------- Boot ----------
