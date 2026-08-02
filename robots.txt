@@ -1,0 +1,5 @@
+# Private group tool — do not index in search engines or AI crawlers.
+# Anyone with the link can still open the site; this only blocks discovery via search.
+
+User-agent: *
+Disallow: /

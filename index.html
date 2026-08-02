@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Game Roster</title>
+  <!-- Keep this private group tool out of Google and other search indexes -->
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+  <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="theme-color" content="#1976d2">
   <!-- Warm the Supabase connection in parallel with the page download. Cold revisits were slow
        because the browser handshakes Vercel for the HTML, THEN handshakes Supabase for the data. -->
@@ -16,21 +19,36 @@
     try {
       var U = 'https://yogymlpqgqjqragrxqgf.supabase.co';
       var K = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvZ3ltbHBxZ3FqcXJhZ3J4cWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyOTg1ODAsImV4cCI6MjA4ODg3NDU4MH0.6D8B_jK-tLi2g32xNTxkJwQGbJLW798ufCt869rPZgw';
-      // Multi-org: the org is derived server-side from the identifier in the URL (#/<token>
-      // or #/<custom-link>). No identifier → p_token:null → server returns the DEFAULT org (frisbee).
+      // Multi-org: org from URL (#/<token-or-slug>). Access code from ?access= or localStorage.
       var m = location.hash.match(/^#\/([A-Za-z0-9_-]{2,})/);
       var token = m ? m[1] : null;
-      var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+      var am = location.hash.match(/[?&]access=([A-Za-z0-9-]+)/i);
+      var access = am ? am[1] : null;
+      if (!access && token) {
+        try {
+          var map = JSON.parse(localStorage.getItem('egr_access') || '{}');
+          access = map[token] || null;
+        } catch (e) {}
+      }
       var orgs = [];
       try { orgs = JSON.parse(localStorage.getItem('egr_orgs') || '[]'); } catch (e) {}
-      // The multi-roster hub (>=2 joined orgs, no token) has no single org to prefetch.
-      if (orgs.length >= 2 && !token) return;
+      // Installed app start_url is bare "/": if one saved roster, prefetch that.
+      if (!token && orgs.length === 1 && orgs[0] && orgs[0].token) {
+        token = orgs[0].token;
+        try {
+          var map2 = JSON.parse(localStorage.getItem('egr_access') || '{}');
+          access = map2[token] || access;
+        } catch (e2) {}
+      }
+      // Hub (2+ orgs, no token) or bare welcome: nothing to prefetch.
+      if (!token) return;
       window.__egrPrefetch = {
         token: token,
+        access: access,
         promise: fetch(U + '/rest/v1/rpc/get_org_state', {
           method: 'POST',
           headers: { apikey: K, Authorization: 'Bearer ' + K, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ p_token: token, p_pass: null })
+          body: JSON.stringify({ p_token: token, p_pass: null, p_access: access })
         }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       };
     } catch (e) {}
@@ -971,7 +989,7 @@
           <input type="text" id="org-share-link" readonly onclick="this.select()">
           <button class="btn-copy" style="margin-top:0;" onclick="copyShareLink()">Copy</button>
         </div>
-        <div class="field-hint" id="share-link-hint"><strong>This is all you share.</strong> Send it to your players (WhatsApp, text, email) &mdash; they open it and sign up in their browser, nothing to install. It's also the link anyone using the installed app pastes under &ldquo;Add a roster&rdquo; to add your games to theirs.</div>
+        <div class="field-hint" id="share-link-hint"><strong>This is all you share.</strong> The group code is built into the link. Pin it in your group chat. Anyone who taps it can sign up. For people who installed the app, pin the group code too so they can type it once.</div>
       </div>
     </div>
     <div id="edit-roster-msg" style="display:none;color:#e53935;font-size:0.82rem;margin-top:10px;"></div>
@@ -1036,10 +1054,6 @@ const APP_BASE = 'easygameroster.com';
 // copy stays byte-identical). On a preview deploy it's the actual host, so the links the app
 // shows you resolve on the very preview you're testing — not the not-yet-updated live site.
 const LINK_HOST = (typeof location !== 'undefined' && location.host && location.host.indexOf('easygameroster.com') === -1) ? location.host : APP_BASE;
-// Frisbee is the public default roster; its token is deliberately public. The bare URL redirects
-// here so the whole app runs on the tokened path (bare link stays shareable — it just bounces here).
-const DEFAULT_ROSTER_TOKEN = '6gns2XZkj0pD4Wy4k9poXQ';
-
 let adminPass = null;
 let adminName = null;
 let logExpanded = false;
@@ -1165,7 +1179,12 @@ const byCreated = (a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b
 // ---------- Multi-org routing + state ----------
 function parseToken() {
   // Matches a token OR a short custom link (#/homeschool); the server resolves either.
+  // Stops before ? so #/token?access=CODE still yields the token.
   const m = location.hash.match(/^#\/([A-Za-z0-9_-]{2,})/);
+  return m ? m[1] : null;
+}
+function parseAccess() {
+  const m = location.hash.match(/[?&]access=([A-Za-z0-9-]+)/i);
   return m ? m[1] : null;
 }
 function getOrgs() {
@@ -1173,29 +1192,77 @@ function getOrgs() {
   catch (e) { return []; }
 }
 function setOrgs(a) { try { localStorage.setItem('egr_orgs', JSON.stringify(a)); } catch (e) {} }
+
+// Per-roster access codes (local unlock). Keyed by route id and by canonical token.
+function accessMap() {
+  try { const m = JSON.parse(localStorage.getItem('egr_access') || '{}'); return m && typeof m === 'object' ? m : {}; }
+  catch (e) { return {}; }
+}
+function storedAccess(id) {
+  if (!id) return null;
+  const m = accessMap();
+  return m[id] || null;
+}
+function setStoredAccess(id, code) {
+  if (!id || !code) return;
+  try {
+    const m = accessMap();
+    m[id] = code;
+    localStorage.setItem('egr_access', JSON.stringify(m));
+  } catch (e) {}
+}
+function rememberAccess(org, code) {
+  if (!code) return;
+  if (org && org.token) setStoredAccess(org.token, code);
+  if (org && org.slug) setStoredAccess(org.slug, code);
+  if (org && org.custom_slug) setStoredAccess(org.custom_slug, code);
+  const route = parseToken();
+  if (route) setStoredAccess(route, code);
+}
+// Code to send on RPCs: stored unlock, or admin-only invite_code from get_org_state.
+function accessFor(org) {
+  org = org || ORG || {};
+  if (org.invite_code) return org.invite_code;
+  return storedAccess(org.token) || storedAccess(org.custom_slug) || storedAccess(org.slug) || storedAccess(parseToken()) || null;
+}
+function shareUrl(org) {
+  org = org || ORG || {};
+  const id = shareId(org);
+  if (!id) return LINK_HOST;
+  const code = org.invite_code || accessFor(org);
+  let u = LINK_HOST + '/#/' + id;
+  if (code) u += '?access=' + encodeURIComponent(code);
+  return u;
+}
 function resolveRoute() {
   const token = parseToken();
   if (token) return { view: 'single', token: token };
-  if (getOrgs().length >= 2) return { view: 'combined', token: null };   // 2+ rosters → "My Rosters" home (browser or app)
-  return { view: 'single', token: null };
+  if (getOrgs().length >= 2) return { view: 'combined', token: null };   // 2+ rosters → "My Rosters" home
+  if (getOrgs().length === 1) return { view: 'single', token: getOrgs()[0].token }; // installed app / one saved
+  return { view: 'welcome', token: null };
 }
 
-// The primary read: get_org_state(p_token, p_pass) → {org, is_admin, admin_name, games}.
-// Reuses the <head> prefetch on the first player-view load when the token matches.
-async function loadState(token, pass) {
+// The primary read: get_org_state(p_token, p_pass, p_access) → {org, is_admin, admin_name, games, needs_access}.
+// Reuses the <head> prefetch on the first player-view load when the token and access match.
+async function loadState(token, pass, access) {
   token = token || null;
+  access = access || null;
   const pf = window.__egrPrefetch;
-  if (pf && pf.token === token && !pf.used && !pass) {
+  if (pf && pf.token === token && !pf.used && !pass && (pf.access || null) === (access || null)) {
     pf.used = true;
     try {
       const r = await Promise.race([
         pf.promise,
         new Promise((_, rej) => setTimeout(() => rej(new Error('prefetch timeout')), 8000))
       ]);
-      if (r && !r.error) return r;
+      if (r && !r.error) {
+        // If prefetch was locked but we now have a code, re-fetch.
+        if (r.needs_access && access) { /* fall through */ }
+        else return r;
+      }
     } catch (e) { /* fall through to a fresh fetch */ }
   }
-  const r = await rpc('get_org_state', { p_token: token, p_pass: pass || null });
+  const r = await rpc('get_org_state', { p_token: token, p_pass: pass || null, p_access: access || null });
   if (r && r.error) throw new Error(r.error);
   return r;
 }
@@ -1243,7 +1310,8 @@ function applyTerms(org) {
   setHtml('game-maps-hint', 'Adds a &#128205; Location link to the ' + esc(t.oneL) + ' and into the copied message. Paste a Google Maps share link, or leave blank.');
   setText('delete-roster-hint', 'Permanently removes this roster and all its ' + t.manyL + ' and signups. Can\'t be undone.');
   setText('add-admin-intro', 'Give someone else admin access to this roster, so they can create and manage ' + t.manyL + ' too.');
-  setHtml('share-link-hint', '<strong>This is all you share.</strong> Send it to your ' + esc(t.pManyL) + ' (WhatsApp, text, email) &mdash; they open it and sign up in their browser, nothing to install. It\'s also the link anyone using the installed app pastes under &ldquo;Add a roster&rdquo; to add your ' + esc(t.manyL) + ' to theirs.');
+  const codeBit = (ORG && ORG.invite_code) ? (' Pin the group code (<strong>' + esc(ORG.invite_code) + '</strong>) with it for anyone who uses the installed app.') : ' Pin the group code with it for anyone who uses the installed app.';
+  setHtml('share-link-hint', '<strong>This is all you share.</strong> The group code is built into the link. Send it to your ' + esc(t.pManyL) + ' in your group chat.' + codeBit);
 }
 
 // Branding: the default/bare org must stay byte-identical to today, so applyBranding
@@ -1314,14 +1382,23 @@ function refreshCurrentView() { return VIEW === 'combined' ? bootCombined() : lo
 async function loadGames() {
   const container = document.getElementById('games-container');
   try {
-    const state = await loadState(ORG && ORG.token, adminPass);
+    const access = accessFor(ORG);
+    const state = await loadState(ORG && ORG.token, adminPass, access);
     ORG = state.org;                       // full org object, incl. its share token
     if (state.admin_name) adminName = state.admin_name;
     applyBranding(ORG);
     cacheBranding(ORG, ROUTE_TOKEN);
+
+    if (state.needs_access) {
+      renderAccessGate(ORG);
+      return;
+    }
+
     // Seed the local roster list with the first org this device ever opens (migrates
     // existing single-org users). Only when empty — a 2nd org is added explicitly.
-    if (getOrgs().length === 0) setOrgs([{ token: ORG.token, display_name: ORG.display_name }]);
+    if (getOrgs().length === 0 && ORG && ORG.token) {
+      setOrgs([{ token: ORG.token, display_name: ORG.display_name }]);
+    }
     const games = state.games || [];
     renderGames(games);
     // Save the rendered roster so the next open paints instantly (player view only).
@@ -1335,10 +1412,87 @@ async function loadGames() {
     if (e && e.message === 'invalid_token') {
       container.innerHTML = '<div class="empty-state">Roster not found.<br><span style="font-size:0.85rem;color:#888;display:inline-block;margin-top:6px;">This link doesn\'t match a roster. Check you have the exact link the organizer shared.</span></div>';
     } else {
-      container.innerHTML = '<div class="empty-state">Couldn\'t load &mdash; your connection may be slow.<br><button class="btn-copy" style="margin-top:12px;" onclick="loadGames()">Retry</button></div>';
+      container.innerHTML = '<div class="empty-state">Couldn\'t load. Your connection may be slow.<br><button class="btn-copy" style="margin-top:12px;" onclick="loadGames()">Retry</button></div>';
     }
     console.error(e);
   }
+}
+
+function renderAccessGate(org) {
+  const container = document.getElementById('games-container');
+  const name = (org && org.display_name) || 'This roster';
+  container.innerHTML = `<div class="card">
+    <h2 style="margin:0 0 8px;font-size:1.15rem;">${esc(name)}</h2>
+    <p style="color:#555;font-size:0.92rem;line-height:1.45;margin:0 0 14px;">This roster is private. Enter your group code to open it.</p>
+    <div class="form-group">
+      <label>Group code</label>
+      <input type="text" id="access-code-input" placeholder="e.g. FRISBEE-XXXXXX" autocapitalize="characters" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter')submitAccessCode()">
+    </div>
+    <div id="access-code-msg" style="display:none;color:#e53935;font-size:0.85rem;margin:0 0 10px;"></div>
+    <button class="btn-join" style="width:100%;" onclick="submitAccessCode()">Open roster</button>
+    <p style="color:#888;font-size:0.8rem;line-height:1.4;margin:14px 0 0;">Your organizer shared the code in your group chat. If you tapped a link from the chat, you usually won't need this.</p>
+  </div>`;
+  setTimeout(() => { const el = document.getElementById('access-code-input'); if (el) el.focus(); }, 60);
+}
+
+async function submitAccessCode() {
+  const input = document.getElementById('access-code-input');
+  const msg = document.getElementById('access-code-msg');
+  const code = (input && input.value || '').trim();
+  if (!code) { if (input) input.focus(); return; }
+  if (msg) { msg.style.display = 'none'; }
+  try {
+    // Prefer unlocking the current route org; if bare welcome, resolve by code alone.
+    if (ORG && ORG.token) {
+      const state = await loadState(ORG.token, null, code);
+      if (state.needs_access) {
+        if (msg) { msg.textContent = "That code doesn't match this roster. Check with your organizer."; msg.style.display = 'block'; }
+        return;
+      }
+      rememberAccess(state.org, code);
+      ORG = state.org;
+      await bootSingle(ORG.token);
+      return;
+    }
+    const r = await rpc('org_from_invite', { p_invite_code: code });
+    if (!r || r.error || !r.token) {
+      if (msg) { msg.textContent = "That code doesn't match a roster. Check with your organizer."; msg.style.display = 'block'; }
+      return;
+    }
+    rememberAccess(r, code);
+    location.hash = '#/' + r.token;
+  } catch (e) {
+    if (msg) { msg.textContent = "Couldn't check that code. Try again."; msg.style.display = 'block'; }
+  }
+}
+
+function renderWelcome() {
+  VIEW = 'welcome';
+  ROUTE_TOKEN = null;
+  ORG = null;
+  const h1 = document.querySelector('.app-header h1');
+  if (h1) h1.textContent = 'Game Roster';
+  document.title = 'Game Roster';
+  const sub = document.querySelector('.subtitle');
+  if (sub) sub.textContent = '';
+  const homeBar = document.getElementById('home-bar'); if (homeBar) homeBar.style.display = 'none';
+  const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = isStandalone() ? 'flex' : 'none';
+  const notify = document.getElementById('notify-bar'); if (notify) notify.style.display = 'none';
+  const arch = document.getElementById('archive-section'); if (arch) arch.style.display = 'none';
+  document.querySelectorAll('.log-section, .admin-toggle').forEach(el => { el.style.display = 'none'; });
+  document.getElementById('games-container').innerHTML = `<div class="card">
+    <h2 style="margin:0 0 8px;font-size:1.15rem;">Game Roster</h2>
+    <p style="color:#555;font-size:0.92rem;line-height:1.45;margin:0 0 12px;">This app is for invited groups.</p>
+    <p style="color:#555;font-size:0.92rem;line-height:1.45;margin:0 0 14px;"><strong>Easiest way in:</strong> tap the roster link your organizer shared in your group chat.</p>
+    <p style="color:#555;font-size:0.92rem;line-height:1.45;margin:0 0 10px;">Have a group code instead? Enter it here:</p>
+    <div class="form-group">
+      <label>Group code</label>
+      <input type="text" id="access-code-input" placeholder="e.g. FRISBEE-XXXXXX" autocapitalize="characters" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter')submitAccessCode()">
+    </div>
+    <div id="access-code-msg" style="display:none;color:#e53935;font-size:0.85rem;margin:0 0 10px;"></div>
+    <button class="btn-join" style="width:100%;" onclick="submitAccessCode()">Open my roster</button>
+  </div>`;
+  setTimeout(() => { const el = document.getElementById('access-code-input'); if (el) el.focus(); }, 60);
 }
 
 // Build one game card. `org` is the org the game belongs to (single-view: ORG; hub: that
@@ -1554,10 +1708,15 @@ async function signup(gameId) {
   const btn = input.closest('.signup-row') && input.closest('.signup-row').querySelector('.btn-join');
   if (btn) btn.disabled = true;
 
-  const token = (gameOrg[gameId] && gameOrg[gameId].token) || (ORG && ORG.token) || null;
+  const gOrg = gameOrg[gameId] || ORG || {};
+  const token = gOrg.token || (ORG && ORG.token) || null;
+  const code = accessFor(gOrg);
   try {
-    // signup_player logs the activity server-side and enforces open/duplicate/limits.
-    const res = await rpc('signup_player', { p_token: token, p_game_id: gameId, p_player_name: name, p_device_id: deviceId() });
+    // signup_player logs activity server-side and requires the roster access code.
+    const res = await rpc('signup_player', {
+      p_token: token, p_game_id: gameId, p_player_name: name,
+      p_device_id: deviceId(), p_invite_code: code
+    });
     if (res && res.ok === false) {
       if (res.reason === 'duplicate') {
         toast(`${name} is already signed up! Same name? Add your last initial (e.g. "${name} B.")`, 6000);
@@ -1571,7 +1730,9 @@ async function signup(gameId) {
     await refreshCurrentView();
     toast(signupMessage(gameId, name));
   } catch (e) {
-    toast('Error signing up');
+    const m = String((e && e.message) || '');
+    if (m.includes('access_required')) toast('This roster needs the group code. Open the link from your group chat.');
+    else toast('Error signing up');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -1616,18 +1777,24 @@ async function removePlayer(gameId, playerName) {
     actorName = r.name;
   }
 
-  const token = (gameOrg[gameId] && gameOrg[gameId].token) || (ORG && ORG.token) || null;
+  const gOrg = gameOrg[gameId] || ORG || {};
+  const token = gOrg.token || (ORG && ORG.token) || null;
   try {
     // Both RPCs log the removal server-side.
     if (adminPass) {
       await rpc('admin_remove_signup', { p_token: ORG.token, p_pass: adminPass, p_game_id: gameId, p_player_name: playerName });
     } else {
-      await rpc('remove_signup', { p_token: token, p_game_id: gameId, p_player_name: playerName, p_actor_name: actorName });
+      await rpc('remove_signup', {
+        p_token: token, p_game_id: gameId, p_player_name: playerName,
+        p_actor_name: actorName, p_invite_code: accessFor(gOrg)
+      });
     }
     toast(`${playerName} removed`);
     refreshCurrentView();
   } catch (e) {
-    toast('Error removing');
+    const m = String((e && e.message) || '');
+    if (m.includes('access_required')) toast('This roster needs the group code. Open the link from your group chat.');
+    else toast('Error removing');
   }
 }
 
@@ -1654,7 +1821,7 @@ async function loadLog(full) {
   try {
     // get_org_activity returns an ARRAY, with the game label already joined per entry.
     // Default = last 10; p_full:true = up to 500 from the last 7 days.
-    const logs = await rpc('get_org_activity', { p_token: ORG.token, p_full: !!full });
+    const logs = await rpc('get_org_activity', { p_token: ORG.token, p_full: !!full, p_access: accessFor(ORG) });
 
     if (!logs || !logs.length) {
       container.innerHTML = '<div class="card"><div class="empty-state" style="padding:16px;">No activity yet.</div></div>';
@@ -1829,13 +1996,11 @@ function copyList(gameId) {
   if (!d) return;
   const { game, roster, waitlist } = d;
   const org = gameOrg[gameId] || ORG || {};
-  const link = org.is_default ? LINK_HOST : LINK_HOST + '/#/' + shareId(org);
-  // Default org keeps today's exact message. A custom signup_notice wins; otherwise a
-  // sensible per-org default that carries the org's own link.
+  const link = shareUrl(org);
+  // Custom signup_notice wins; otherwise a per-org default that carries the private share link.
   let notice;
   if (org.signup_notice) notice = org.signup_notice;
-  else if (org.is_default) notice = 'DO NOT COPY THIS MESSAGE, USE THIS LINK FOR SIGNUP!\n' + APP_BASE;
-  else notice = `${org.display_name} — sign up here (don't copy this message):\n${link}`;
+  else notice = `DO NOT COPY THIS MESSAGE. USE THIS LINK TO SIGN UP:\n${link}`;
   let text = `${notice}\n\n${game.label} — ${formatDate(game.game_date)}, ${formatTime(game.game_time)}\n`;
   if (game.maps_link) text += `\u{1F4CD} ${game.maps_link}\n`;
   text += `\n`;
@@ -1936,15 +2101,16 @@ function subKeyMatches(sub) {
 // so we can safely re-store the same device on every load.
 function storeSubscription(sub) {
   const j = sub.toJSON();
-  // save_subscription is an idempotent server-side upsert, scoped to this org's token.
+  // save_subscription is an idempotent server-side upsert; requires roster access code.
   return rpc('save_subscription', {
     p_token: ORG && ORG.token, p_endpoint: sub.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth,
-    p_user_agent: navigator.userAgent, p_device_id: deviceId()
+    p_user_agent: navigator.userAgent, p_device_id: deviceId(), p_invite_code: accessFor(ORG)
   });
 }
 
 async function initNotify() {
   if (!pushSupported()) return; // unsupported browser → leave the bar hidden
+  if (!ORG || !accessFor(ORG)) return; // never show notify on the access gate
   document.getElementById('notify-bar').style.display = 'block';
   try {
     await navigator.serviceWorker.register('/sw.js');
@@ -2240,7 +2406,12 @@ async function bootCombined() {
   });
   await Promise.all(orgs.map(async (o, i) => {
     try {
-      const state = await loadState(o.token, null);   // player view for each org, in parallel
+      const code = storedAccess(o.token);
+      const state = await loadState(o.token, null, code);
+      if (state.needs_access) {
+        sections[i].innerHTML = rosterCardHtml(o.token, state.org.display_name || o.display_name, 'Tap to enter your group code');
+        return;
+      }
       renderOrgGroup(state.org, state.games, sections[i]);
     } catch (e) {
       renderOrgLoadError(o, sections[i]);
@@ -2264,11 +2435,15 @@ function showAddMsg(t) {
   const msg = document.getElementById('add-roster-msg');
   if (msg) { msg.textContent = t; msg.style.display = 'block'; }
 }
-// Pull a roster identifier out of whatever was pasted — a full share link (…/#/<token-or-link>)
+// Pull a roster identifier out of whatever was pasted — a full share link (…/#/<token-or-link>?access=…)
 // or a bare token. The server resolves a token or a custom link equally.
 function parseTokenFrom(text) {
   const t = (text || '').trim();
   const m = t.match(/#\/([A-Za-z0-9_-]{2,})/) || t.match(/^([A-Za-z0-9_-]{16,})$/);
+  return m ? m[1] : null;
+}
+function parseAccessFrom(text) {
+  const m = (text || '').match(/[?&]access=([A-Za-z0-9-]+)/i);
   return m ? m[1] : null;
 }
 async function pasteRosterLink() {
@@ -2279,13 +2454,20 @@ async function pasteRosterLink() {
   } catch (e) { showAddMsg('Long-press the box and choose Paste.'); }
 }
 async function confirmAddRoster() {
-  const token = parseTokenFrom(document.getElementById('add-roster-code').value);
-  if (!token) { showAddMsg("Paste the league's link (the part after #/ is the code)."); return; }
+  const raw = document.getElementById('add-roster-code').value;
+  const token = parseTokenFrom(raw);
+  const access = parseAccessFrom(raw);
+  if (!token) { showAddMsg("Paste the league's full link from your group chat."); return; }
   try {
-    const r = await rpc('get_org_state', { p_token: token });
-    if (!r || r.error || !r.org) { showAddMsg("That link didn't match a roster — check you copied the whole thing."); return; }
+    if (access) setStoredAccess(token, access);
+    const r = await rpc('get_org_state', { p_token: token, p_access: access || storedAccess(token) || null });
+    if (!r || r.error || !r.org) { showAddMsg("That link didn't match a roster. Check you copied the whole thing."); return; }
+    if (access) rememberAccess(r.org, access);
     const orgs = getOrgs();
-    if (!orgs.some(o => o.token === token)) { orgs.push({ token: token, display_name: r.org.display_name }); setOrgs(orgs); }
+    if (!orgs.some(o => o.token === r.org.token)) {
+      orgs.push({ token: r.org.token, display_name: r.org.display_name });
+      setOrgs(orgs);
+    }
     closeAddRoster();
     toast(`${r.org.display_name} added`);
     if (VIEW === 'combined') { bootCombined(); return; }
@@ -2350,6 +2532,7 @@ async function confirmCreateRoster() {
     const orgs = getOrgs();
     if (!orgs.some(o => o.token === r.token)) { orgs.push({ token: r.token, display_name: r.display_name }); setOrgs(orgs); }
     setStoredPass(r.slug, pass);
+    if (r.invite_code) rememberAccess({ token: r.token, slug: r.slug }, r.invite_code);
     closeCreateRoster();
     toast(`${r.display_name} created`);
     const target = '#/' + r.token;
@@ -2405,16 +2588,16 @@ function closeAddAdmin() { const el = document.getElementById('add-admin-overlay
 // ---------- Join affordance (installed app only, viewing a league not yet saved) ----------
 function shareRosterLink() {
   if (!ORG) return;
-  const url = 'https://' + (ORG.is_default ? LINK_HOST : LINK_HOST + '/#/' + shareId(ORG));
+  const url = 'https://' + shareUrl(ORG);
   if (navigator.share) {
     navigator.share({ title: ORG.display_name || 'Game Roster', text: 'Sign up for ' + (ORG.display_name || ('the ' + T(ORG).oneL)) + ':', url: url }).catch(() => {});
   } else {
-    navigator.clipboard.writeText(url).then(() => toast('Roster link copied — send it to your ' + T(ORG).pManyL)).catch(() => toast("Couldn't copy"));
+    navigator.clipboard.writeText(url).then(() => toast('Roster link copied. Send it to your ' + T(ORG).pManyL)).catch(() => toast("Couldn't copy"));
   }
 }
 function copyShareLink() {
   if (!ORG) return;
-  const link = ORG.is_default ? LINK_HOST : LINK_HOST + '/#/' + shareId(ORG);
+  const link = shareUrl(ORG);
   navigator.clipboard.writeText(link).then(() => toast('Share link copied')).catch(() => toast("Couldn't copy"));
 }
 function joinCurrentOrg() {
@@ -2466,7 +2649,11 @@ function updateSlugPreview() {
     const clean = el.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
     if (el.value !== clean) el.value = clean;
   }
-  if (pv) { const s = el ? el.value : ''; pv.textContent = s ? ('Link: ' + LINK_HOST + '/#/' + s) : ''; }
+  if (pv) {
+    const s = el ? el.value : '';
+    const code = ORG && ORG.invite_code ? ('?access=' + ORG.invite_code) : '';
+    pv.textContent = s ? ('Link: ' + LINK_HOST + '/#/' + s + code) : '';
+  }
 }
 function renderOrgSettings() {
   if (!ORG) return;
@@ -2477,8 +2664,8 @@ function renderOrgSettings() {
   set('org-event-term-input', ORG.event_term || '');
   set('org-person-term-input', ORG.person_term || '');
   set('org-custom-slug-input', ORG.custom_slug || '');
-  const sl = document.getElementById('org-share-link'); if (sl) sl.value = ORG.is_default ? LINK_HOST : LINK_HOST + '/#/' + shareId(ORG);
-  // Custom link + delete are only for a non-default roster (the default shares the bare URL and can't be deleted).
+  const sl = document.getElementById('org-share-link'); if (sl) sl.value = shareUrl(ORG);
+  // Custom link + delete are only for a non-default roster (the default can't be deleted).
   const cg = document.getElementById('org-custom-slug-group'); if (cg) cg.style.display = ORG.is_default ? 'none' : 'block';
   const dz = document.getElementById('roster-danger-zone'); if (dz) dz.style.display = ORG.is_default ? 'none' : 'block';
   const msg = document.getElementById('edit-roster-msg'); if (msg) msg.style.display = 'none';
@@ -2527,22 +2714,44 @@ async function saveOrgBranding() {
 async function bootSingle(token) {
   VIEW = 'single';
   ROUTE_TOKEN = token;
+
+  // Magic link: capture ?access=CODE from the hash, store it, strip it from the address bar.
+  const urlAccess = parseAccess();
+  if (urlAccess) {
+    setStoredAccess(token, urlAccess);
+    try { history.replaceState(null, '', '#/' + token); } catch (e) {}
+  }
+
   // Hydrate from cached branding so copy links / notices are correct during the pre-load
   // (and offline) window — not a bare {token} stub that would emit "undefined"/#/null.
   ORG = Object.assign({ token: token }, readBranding(token) || {});
-  paintCachedBranding(token);   // instant branding from cache (no-op for the default org)
-  paintSnapshot(token);         // instant roster from the last snapshot (no "Loading…" flash)
+  paintCachedBranding(token);
+  // Only paint a cached roster if this device is already unlocked (no flash of private data).
+  if (accessFor(ORG) || urlAccess) paintSnapshot(token);
   // In the installed app, expose the "Add a roster" (+) so a 2nd roster is reachable (esp. iOS,
   // where a tapped link opens Safari, not the app). Hidden in a plain browser tab.
   const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = (isStandalone() || getOrgs().length >= 2) ? 'flex' : 'none';
   // Show the "← My Rosters" home bar when there's a hub to go back to (installed + 2+ rosters).
   const homeBar = document.getElementById('home-bar');
   if (homeBar) homeBar.style.display = (getOrgs().length >= 2) ? 'block' : 'none';
+  // Restore single-view chrome if we came from the hub.
+  document.querySelectorAll('.log-section, .admin-toggle').forEach(el => { el.style.display = ''; });
   migrateLegacyAdmin();
   await loadGames();            // full state → sets ORG, applies branding, seeds egr_orgs, renders
-  if (!ORG || !ORG.slug) return;  // load failed → loadGames already showed the retry UI
+  // After load, pin access under the canonical token too (URL may have used a custom slug).
+  if (urlAccess && ORG) rememberAccess(ORG, urlAccess);
+  if (!ORG || !ORG.slug) return;  // load failed → UI already shown
+
+  // Admin restore can unlock without a player code (server accepts admin pass).
   const pass = storedPass(ORG.slug, ORG.is_default);
-  if (pass) await loginAdmin(pass, true);   // restore admin session → drafts + admin actions
+  if (pass) await loginAdmin(pass, true);
+
+  // Still gated and not admin → stop (no notify / join chrome on the lock screen).
+  if (!accessFor(ORG) && !adminPass) {
+    const nb = document.getElementById('notify-bar'); if (nb) nb.style.display = 'none';
+    return;
+  }
+
   maybeShowJoinAffordances(token);
   initNotify();
   initInstall();
@@ -2550,14 +2759,16 @@ async function bootSingle(token) {
 function boot() {
   const route = resolveRoute();
   if (route.view === 'combined') { bootCombined(); return; }
-  // Bare URL (no token) → run on the tokened frisbee link. Rewrite the URL in place (no reload)
-  // so everything downstream operates on the token, while old bookmarks to the bare link still work.
-  if (route.token === null) {
-    try { history.replaceState(null, '', '#/' + DEFAULT_ROSTER_TOKEN); } catch (e) {}
-    bootSingle(DEFAULT_ROSTER_TOKEN);
+  if (route.view === 'welcome') { renderWelcome(); return; }
+  // Bare URL with exactly one saved roster opens that roster (installed-app start_url is /).
+  if (route.token) {
+    if (!parseToken() && route.token) {
+      try { history.replaceState(null, '', '#/' + route.token); } catch (e) {}
+    }
+    bootSingle(route.token);
     return;
   }
-  bootSingle(route.token);
+  renderWelcome();
 }
 window.addEventListener('hashchange', () => location.reload());  // drilling in/out re-boots the right view
 boot();
