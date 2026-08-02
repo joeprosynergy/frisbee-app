@@ -984,12 +984,20 @@
         <div class="field-hint">A clean, memorable link people can read &mdash; letters, numbers and dashes only. Must be unique; if it's taken you'll be asked to pick another. Your original token link keeps working too. <span id="org-slug-preview" style="display:block;margin-top:4px;color:#1976d2;word-break:break-all;"></span></div>
       </div>
       <div class="form-group">
+        <label>Group code</label>
+        <div class="share-row">
+          <input type="text" id="org-group-code" readonly onclick="this.select()" style="font-weight:600;letter-spacing:0.04em;">
+          <button class="btn-copy" style="margin-top:0;" onclick="copyGroupCode()">Copy</button>
+        </div>
+        <div class="field-hint">This roster&rsquo;s secret. Auto-set when the roster was created. Pin it in the group chat for anyone who uses the installed app (they type it once). You don&rsquo;t type it yourself if you&rsquo;re logged in as admin on this phone.</div>
+      </div>
+      <div class="form-group">
         <label>Share link</label>
         <div class="share-row">
           <input type="text" id="org-share-link" readonly onclick="this.select()">
           <button class="btn-copy" style="margin-top:0;" onclick="copyShareLink()">Copy</button>
         </div>
-        <div class="field-hint" id="share-link-hint"><strong>This is all you share.</strong> The group code is built into the link. Pin it in your group chat. Anyone who taps it can sign up. For people who installed the app, pin the group code too so they can type it once.</div>
+        <div class="field-hint" id="share-link-hint"><strong>This is all most people need.</strong> The group code is built into the link. Pin it in your group chat. Anyone who taps it can sign up.</div>
       </div>
     </div>
     <div id="edit-roster-msg" style="display:none;color:#e53935;font-size:0.82rem;margin-top:10px;"></div>
@@ -1219,11 +1227,18 @@ function rememberAccess(org, code) {
   const route = parseToken();
   if (route) setStoredAccess(route, code);
 }
-// Code to send on RPCs: stored unlock, or admin-only invite_code from get_org_state.
+// Code to send on RPCs: stored unlock, admin-visible invite_code, or branding cache.
 function accessFor(org) {
   org = org || ORG || {};
   if (org.invite_code) return org.invite_code;
-  return storedAccess(org.token) || storedAccess(org.custom_slug) || storedAccess(org.slug) || storedAccess(parseToken()) || null;
+  const fromStore = storedAccess(org.token) || storedAccess(org.custom_slug) || storedAccess(org.slug) || storedAccess(parseToken()) || null;
+  if (fromStore) return fromStore;
+  // Branding cache keeps invite_code after an admin session on this phone.
+  try {
+    const b = readBranding(org.token || parseToken());
+    if (b && b.invite_code) return b.invite_code;
+  } catch (e) {}
+  return null;
 }
 function shareUrl(org) {
   org = org || ORG || {};
@@ -1894,8 +1909,9 @@ async function loginAdmin(pass, silent) {
       document.getElementById('admin-tools').style.display = 'block';
       document.getElementById('admin-panel').style.display = 'block';
       if (!silent) toast(`Hi ${r.name}`);
-      await loadGames();       // reload with drafts + admin actions
-      renderOrgSettings();     // populate the branding editor + share block
+      await loadGames();       // reload with drafts + admin actions (invite_code arrives for admins)
+      if (ORG && ORG.invite_code) rememberAccess(ORG, ORG.invite_code);
+      renderOrgSettings();     // populate the branding editor + share + group code
     } else {
       // Stored passphrase no longer valid
       clearStoredPass(ORG.slug, ORG.is_default);
@@ -2406,11 +2422,19 @@ async function bootCombined() {
   });
   await Promise.all(orgs.map(async (o, i) => {
     try {
-      const code = storedAccess(o.token);
-      const state = await loadState(o.token, null, code);
+      // Prefer stored player code; fall back to branding cache (admin phones keep invite_code there).
+      const brand = readBranding(o.token) || {};
+      const code = storedAccess(o.token) || brand.invite_code || null;
+      // Admin passphrase on this phone also unlocks (same as opening the roster).
+      const pass = storedPass(brand.slug, brand.is_default) || null;
+      const state = await loadState(o.token, pass, code);
       if (state.needs_access) {
-        sections[i].innerHTML = rosterCardHtml(o.token, state.org.display_name || o.display_name, 'Tap to enter your group code');
+        sections[i].innerHTML = rosterCardHtml(o.token, state.org.display_name || o.display_name, 'Needs group code once');
         return;
+      }
+      // Persist code under token so next hub load is clean for players who unlocked via admin cache.
+      if (state.org && (code || state.org.invite_code)) {
+        rememberAccess(state.org, code || state.org.invite_code);
       }
       renderOrgGroup(state.org, state.games, sections[i]);
     } catch (e) {
@@ -2600,6 +2624,10 @@ function copyShareLink() {
   const link = shareUrl(ORG);
   navigator.clipboard.writeText(link).then(() => toast('Share link copied')).catch(() => toast("Couldn't copy"));
 }
+function copyGroupCode() {
+  if (!ORG || !ORG.invite_code) { toast('Log in as admin to see the group code'); return; }
+  navigator.clipboard.writeText(ORG.invite_code).then(() => toast('Group code copied')).catch(() => toast("Couldn't copy"));
+}
 function joinCurrentOrg() {
   if (!ORG || !ORG.token) return;
   const orgs = getOrgs();
@@ -2664,6 +2692,8 @@ function renderOrgSettings() {
   set('org-event-term-input', ORG.event_term || '');
   set('org-person-term-input', ORG.person_term || '');
   set('org-custom-slug-input', ORG.custom_slug || '');
+  const gc = document.getElementById('org-group-code');
+  if (gc) gc.value = ORG.invite_code || '(log in as admin to see this roster code)';
   const sl = document.getElementById('org-share-link'); if (sl) sl.value = shareUrl(ORG);
   // Custom link + delete are only for a non-default roster (the default can't be deleted).
   const cg = document.getElementById('org-custom-slug-group'); if (cg) cg.style.display = ORG.is_default ? 'none' : 'block';
