@@ -847,6 +847,16 @@
       <button class="btn-edit" style="display:block;width:100%;" onclick="openCreateRoster()">Create a new roster</button>
     </div>
 
+    <div class="card" id="admin-sessions-box" style="display:none;">
+      <h2>Admin sessions</h2>
+      <p class="field-hint" id="admin-sessions-count" style="margin-top:0;">Loading…</p>
+      <div id="admin-sessions-list" style="margin:8px 0 12px;"></div>
+      <button class="btn-edit" style="display:block;width:100%;margin-bottom:8px;" onclick="refreshAdminSessions()">Refresh list</button>
+      <button class="btn-edit" style="display:block;width:100%;margin-bottom:8px;" onclick="bootAdminSessions('others')">Boot everyone else</button>
+      <button class="btn-danger" style="display:block;width:100%;" onclick="bootAdminSessions('all')">Boot all admins (incl. me)</button>
+      <div class="field-hint" style="margin-top:10px;">Boots force a fresh admin passphrase on those phones. Group codes and player signups are unchanged.</div>
+    </div>
+
     <button class="btn btn-small" style="background:#eee;color:#666;width:100%;margin-top:8px;" onclick="logoutAdmin()">Log out</button>
   </div>
 </div>
@@ -1089,6 +1099,7 @@ const APP_BASE = 'easygameroster.com';
 // shows you resolve on the very preview you're testing — not the not-yet-updated live site.
 const LINK_HOST = (typeof location !== 'undefined' && location.host && location.host.indexOf('easygameroster.com') === -1) ? location.host : APP_BASE;
 let adminPass = null;
+let adminSession = null; // server session_token for this admin login
 let adminName = null;
 let logExpanded = false;
 
@@ -1289,7 +1300,8 @@ function adminRpcParams(extra) {
   return Object.assign({
     p_token: ORG && ORG.token,
     p_pass: adminPass,
-    p_access: accessFor(ORG)
+    p_access: accessFor(ORG),
+    p_session: adminSession || (ORG && storedSession(ORG.slug)) || null
   }, extra || {});
 }
 function shareUrl(org) {
@@ -1311,11 +1323,13 @@ function resolveRoute() {
 
 // The primary read: get_org_state(p_token, p_pass, p_access) → {org, is_admin, admin_name, games, needs_access}.
 // Reuses the <head> prefetch on the first player-view load when the token and access match.
-async function loadState(token, pass, access) {
+async function loadState(token, pass, access, session) {
   token = token || null;
   access = access || null;
+  session = session || null;
   const pf = window.__egrPrefetch;
-  if (pf && pf.token === token && !pf.used && !pass && (pf.access || null) === (access || null)) {
+  // Prefetch is always player-only (no pass/session) — only reuse when not elevating to admin.
+  if (pf && pf.token === token && !pf.used && !pass && !session && (pf.access || null) === (access || null)) {
     pf.used = true;
     try {
       const r = await Promise.race([
@@ -1323,13 +1337,14 @@ async function loadState(token, pass, access) {
         new Promise((_, rej) => setTimeout(() => rej(new Error('prefetch timeout')), 8000))
       ]);
       if (r && !r.error) {
-        // If prefetch was locked but we now have a code, re-fetch.
         if (r.needs_access && access) { /* fall through */ }
         else return r;
       }
     } catch (e) { /* fall through to a fresh fetch */ }
   }
-  const r = await rpc('get_org_state', { p_token: token, p_pass: pass || null, p_access: access || null });
+  const r = await rpc('get_org_state', {
+    p_token: token, p_pass: pass || null, p_access: access || null, p_session: session || null
+  });
   if (r && r.error) throw new Error(r.error);
   return r;
 }
@@ -1438,10 +1453,27 @@ function storedPass(slug, isDefault) {
   } catch (e) { return null; }
 }
 function setStoredPass(slug, pass) { try { if (slug) localStorage.setItem('egr_admin_' + slug, pass); } catch (e) {} }
+function storedSession(slug) {
+  try { return slug ? (localStorage.getItem('egr_admin_sess_' + slug) || null) : null; } catch (e) { return null; }
+}
+function setStoredSession(slug, token) {
+  try {
+    if (!slug) return;
+    if (token) localStorage.setItem('egr_admin_sess_' + slug, token);
+    else localStorage.removeItem('egr_admin_sess_' + slug);
+  } catch (e) {}
+}
 function clearStoredPass(slug, isDefault) {
   try {
-    if (slug) localStorage.removeItem('egr_admin_' + slug);
-    if (isDefault) { localStorage.removeItem('egr_admin_frisbee'); localStorage.removeItem('frisbee_admin'); }
+    if (slug) {
+      localStorage.removeItem('egr_admin_' + slug);
+      localStorage.removeItem('egr_admin_sess_' + slug);
+    }
+    if (isDefault) {
+      localStorage.removeItem('egr_admin_frisbee');
+      localStorage.removeItem('frisbee_admin');
+      localStorage.removeItem('egr_admin_sess_frisbee');
+    }
   } catch (e) {}
 }
 function refreshCurrentView() { return VIEW === 'combined' ? bootCombined() : loadGames(); }
@@ -1450,7 +1482,7 @@ async function loadGames() {
   const container = document.getElementById('games-container');
   try {
     const access = accessFor(ORG);
-    const state = await loadState(ORG && ORG.token, adminPass, access);
+    const state = await loadState(ORG && ORG.token, adminPass, access, adminSession || (ORG && storedSession(ORG.slug)));
     ORG = state.org;                       // full org object, incl. its share token
     if (state.admin_name) adminName = state.admin_name;
     applyBranding(ORG);
@@ -1460,6 +1492,7 @@ async function loadGames() {
       purgeAccessFor(ORG);
       adminPass = null;
       adminName = null;
+      adminSession = null;
       document.querySelectorAll('.admin-toggle, .log-section').forEach(el => { el.style.display = 'none'; });
       const nb = document.getElementById('notify-bar'); if (nb) nb.style.display = 'none';
       const ap = document.getElementById('admin-panel'); if (ap) ap.style.display = 'none';
@@ -1468,6 +1501,19 @@ async function loadGames() {
     }
     // Unlocked — show admin chrome again (login still needs the pass).
     document.querySelectorAll('.admin-toggle, .log-section').forEach(el => { el.style.display = ''; });
+    // Session was booted or expired while we still have a local pass
+    if (adminPass && !state.is_admin) {
+      adminPass = null; adminName = null; adminSession = null;
+      if (ORG) clearStoredPass(ORG.slug, ORG.is_default);
+      const login = document.getElementById('admin-login');
+      const tools = document.getElementById('admin-tools');
+      if (login) login.style.display = 'block';
+      if (tools) tools.style.display = 'none';
+      const box = document.getElementById('admin-sessions-box');
+      if (box) box.style.display = 'none';
+    } else if (state.is_admin && adminPass) {
+      refreshAdminSessions();
+    }
 
     // Seed the local roster list with the first org this device ever opens (migrates
     // existing single-org users). Only when empty — a 2nd org is added explicitly.
@@ -1972,20 +2018,27 @@ async function loginAdmin(pass, silent) {
     return;
   }
   try {
-    const r = await rpc('verify_admin', { p_token: ORG.token, p_pass: pass, p_access: code });
+    const r = await rpc('verify_admin', {
+      p_token: ORG.token, p_pass: pass, p_access: code,
+      p_device_id: deviceId(), p_user_agent: navigator.userAgent || null
+    });
     if (r && r.ok) {
       adminPass = pass;
       adminName = r.name;
+      adminSession = r.session_token || null;
       setStoredPass(ORG.slug, pass);
+      setStoredSession(ORG.slug, adminSession);
       document.getElementById('admin-login').style.display = 'none';
       document.getElementById('admin-tools').style.display = 'block';
       document.getElementById('admin-panel').style.display = 'block';
       if (!silent) toast(`Hi ${r.name}`);
-      await loadGames();       // reload with drafts + admin actions (invite_code arrives for admins)
+      await loadGames();
       if (ORG && ORG.invite_code) rememberAccess(ORG, ORG.invite_code);
-      renderOrgSettings();     // populate the branding editor + share + group code
+      renderOrgSettings();
+      refreshAdminSessions();
     } else {
       clearStoredPass(ORG.slug, ORG.is_default);
+      adminSession = null;
       if (!silent) toast('Wrong passphrase');
     }
   } catch (e) {
@@ -2014,7 +2067,7 @@ async function confirmChangePass() {
   if (neu !== conf) return err('New passphrase and confirm do not match.');
   try {
     await rpc('change_admin_passphrase', {
-      p_token: ORG.token, p_pass: cur, p_new_pass: neu, p_access: accessFor(ORG)
+      p_token: ORG.token, p_pass: cur, p_new_pass: neu, p_access: accessFor(ORG), p_session: adminSession
     });
     adminPass = neu;
     setStoredPass(ORG.slug, neu);
@@ -2029,15 +2082,99 @@ async function confirmChangePass() {
   }
 }
 
-function logoutAdmin() {
+async function logoutAdmin() {
+  try {
+    if (ORG && adminSession) {
+      await rpc('revoke_my_admin_session', { p_token: ORG.token, p_session: adminSession });
+    }
+  } catch (e) {}
   adminPass = null;
   adminName = null;
+  adminSession = null;
   if (ORG) clearStoredPass(ORG.slug, ORG.is_default);
   document.getElementById('admin-login').style.display = 'block';
   document.getElementById('admin-tools').style.display = 'none';
   document.getElementById('admin-pass').value = '';
+  const box = document.getElementById('admin-sessions-box');
+  if (box) box.style.display = 'none';
   toast('Logged out');
   loadGames();
+}
+
+function formatSessionWhen(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + 'm ago';
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 48) return hrs + 'h ago';
+    return formatDate(iso.slice(0, 10));
+  } catch (e) { return ''; }
+}
+
+async function refreshAdminSessions() {
+  const box = document.getElementById('admin-sessions-box');
+  const list = document.getElementById('admin-sessions-list');
+  const countEl = document.getElementById('admin-sessions-count');
+  if (!box || !list || !adminPass || !adminSession || !ORG) return;
+  try {
+    const rows = await rpc('list_admin_sessions', adminRpcParams());
+    const arr = Array.isArray(rows) ? rows : [];
+    const active = arr.filter(s => s.active);
+    box.style.display = 'block';
+    if (countEl) countEl.textContent = active.length + ' active in last 24h · ' + arr.length + ' in last 7 days';
+    if (!arr.length) {
+      list.innerHTML = '<div class="field-hint" style="margin:0;">No other sessions logged.</div>';
+      return;
+    }
+    list.innerHTML = arr.map(s => {
+      const me = s.is_me ? ' <strong>(this phone)</strong>' : '';
+      const stale = s.active ? '' : ' · idle';
+      const dev = s.device_id ? (' · ' + String(s.device_id).slice(0, 8) + '…') : '';
+      return `<div style="font-size:0.85rem;padding:6px 0;border-bottom:1px solid rgba(128,128,128,0.15);">
+        <strong>${esc(s.admin_name || 'Admin')}</strong>${me}${stale}<br>
+        <span style="color:#888;">Last seen ${esc(formatSessionWhen(s.last_seen_at))}${esc(dev)}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    box.style.display = 'block';
+    if (countEl) countEl.textContent = 'Could not load sessions';
+    list.innerHTML = '';
+  }
+}
+
+async function bootAdminSessions(mode) {
+  if (!adminPass || !adminSession) { toast('Log in as admin first'); return; }
+  const others = mode !== 'all';
+  const msg = others
+    ? 'Sign out every other admin phone for this roster? You stay logged in here.'
+    : 'Sign out ALL admin phones for this roster, including this one? Everyone will need to enter the passphrase again.';
+  if (!confirm(msg)) return;
+  try {
+    const r = await rpc('revoke_admin_sessions', adminRpcParams({ p_mode: others ? 'others' : 'all' }));
+    const n = (r && r.revoked) || 0;
+    if (!others) {
+      toast('Booted ' + n + ' session(s). Sign in again.');
+      adminPass = null; adminName = null; adminSession = null;
+      if (ORG) clearStoredPass(ORG.slug, ORG.is_default);
+      document.getElementById('admin-login').style.display = 'block';
+      document.getElementById('admin-tools').style.display = 'none';
+      loadGames();
+      return;
+    }
+    toast('Booted ' + n + ' other session(s)');
+    refreshAdminSessions();
+  } catch (e) {
+    const m = String((e && e.message) || '');
+    if (m.includes('forbidden') || m.includes('session')) {
+      toast('Your admin session expired. Log in again.');
+      adminPass = null; adminSession = null;
+      document.getElementById('admin-login').style.display = 'block';
+      document.getElementById('admin-tools').style.display = 'none';
+    } else toast('Could not boot sessions');
+  }
 }
 
 async function createGame() {
@@ -2067,7 +2204,7 @@ async function openCopyPicker() {
     // Pull THIS org's games (live/draft + archived) via the org-scoped RPCs — never a
     // direct table read, which would cross orgs.
     const [state, arch] = await Promise.all([
-      loadState(ORG.token, adminPass, accessFor(ORG)).catch(() => null),
+      loadState(ORG.token, adminPass, accessFor(ORG), adminSession).catch(() => null),
       rpc('get_org_archived', adminRpcParams()).catch(() => null)
     ]);
     let recent = [];
@@ -2658,6 +2795,7 @@ async function confirmCreateRoster() {
       p_proof_token: proof.token, p_proof_pass: proof.pass,
       p_name: name, p_subtitle: subtitle, p_admin_pass: pass,
       p_proof_access: storedAccess(proof.token) || accessFor(ORG),
+      p_proof_session: adminSession || (ORG && storedSession(ORG.slug)) || null,
       p_event_term: ev || null, p_event_term_plural: ev ? pluralize(ev) : null,
       p_person_term: pe || null, p_person_term_plural: pe ? pluralize(pe) : null
     });
@@ -2703,7 +2841,7 @@ async function confirmDeleteRoster() {
   const gone = ORG;
   try {
     // The passphrase is validated server-side (delete_roster rejects a wrong one with 'forbidden').
-    const r = await rpc('delete_roster', { p_token: gone.token, p_pass: typedPass, p_access: accessFor(gone) || accessFor(ORG) });
+    const r = await rpc('delete_roster', { p_token: gone.token, p_pass: typedPass, p_access: accessFor(gone) || accessFor(ORG), p_session: adminSession });
     if (!r || !r.ok) { if (msg) { msg.textContent = 'Could not delete. Try again.'; msg.style.display = 'block'; } return; }
     const orgs = getOrgs().filter(o => o.token !== gone.token);
     setOrgs(orgs);
@@ -2824,7 +2962,7 @@ async function saveOrgBranding() {
   if (slug && !SLUG_RE.test(slug)) { showEditMsg('Custom link must be 3–30 characters: lowercase letters, numbers and dashes only.'); return; }
   // '' clears a term/link back to the default; a value sets it. (create-side plurals computed here too.)
   const params = {
-    p_token: ORG.token, p_pass: adminPass, p_access: accessFor(ORG),
+    p_token: ORG.token, p_pass: adminPass, p_access: accessFor(ORG), p_session: adminSession,
     p_display_name: dn, p_subtitle: st, p_signup_notice: nt,
     p_event_term: ev, p_event_term_plural: ev ? pluralize(ev) : '',
     p_person_term: pe, p_person_term_plural: pe ? pluralize(pe) : ''
