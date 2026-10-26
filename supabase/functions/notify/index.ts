@@ -7,7 +7,9 @@
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const parsed = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}");
+const SERVICE_KEY = parsed["rotation_2026_10_26"];
+if (typeof SERVICE_KEY !== "string") throw new Error("missing named secret");
 const FUNCTION_SECRET = Deno.env.get("FUNCTION_SECRET")!;
 const VAPID_JWK = Deno.env.get("VAPID_JWK")!;
 const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") ?? "mailto:joe@plyntr.com";
@@ -17,8 +19,27 @@ const vapidKeys = await webpush.importVapidKeys(JSON.parse(VAPID_JWK), { extract
 const appServer = await webpush.ApplicationServer.new({ contactInformation: VAPID_SUBJECT, vapidKeys });
 
 const REST = `${SUPABASE_URL}/rest/v1`;
-const H: Record<string, string> = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
-const rest = (path: string, init: RequestInit = {}) => fetch(`${REST}/${path}`, { ...init, headers: { ...H, ...(init.headers || {}) } });
+let sentKeyFp = "";
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 8);
+}
+
+const rest = async (path: string, init: RequestInit = {}) => {
+  const prefer = (init.headers as Record<string, string> | undefined)?.Prefer;
+  sentKeyFp = await sha256Hex(SERVICE_KEY);
+  return fetch(`${REST}/${path}`, {
+    method: init.method,
+    body: init.body,
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      ...(prefer ? { Prefer: prefer } : {}),
+    },
+  });
+};
 const getJson = async (path: string) => (await rest(path)).json();
 
 function fmtDate(d: string) {
@@ -66,6 +87,10 @@ Deno.serve(async (req) => {
 
   const game = (await getJson(`games?id=eq.${game_id}&select=*`))?.[0];
   if (!game) return Response.json({ skip: "no game" });
+  if (dry_run === true) {
+    return Response.json({ dry_run: true, sent: 0, status: game.status, label: game.label, key_fp: sentKeyFp });
+  }
+
 
   // Scope to THIS roster's subscribers only. push_org maps each subscription endpoint to its org,
   // so a game in one roster never notifies another roster's people.
