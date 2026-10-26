@@ -239,6 +239,38 @@
       margin-top: 6px;
       text-align: center;
     }
+    .suggest-row { display: flex; align-items: stretch; gap: 8px; margin-top: 8px; }
+    .suggest-join { flex: 1; white-space: normal; }
+    .suggest-x {
+      width: 46px;
+      flex-shrink: 0;
+      border: none;
+      border-radius: 10px;
+      background: #f0f0f0;
+      color: #888;
+      font-size: 1.45rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .suggest-x:active { background: #e0e0e0; color: #555; }
+    .signup-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 8px;
+      font-weight: 700;
+    }
+    .someone-else {
+      display: block;
+      margin: 8px auto 0;
+      background: none;
+      border: none;
+      color: #1976d2;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
     .field-hint { font-size: 0.75rem; color: #999; margin-top: 4px; line-height: 1.4; }
     .field-hint strong { color: #777; font-weight: 600; }
     .card-intro { font-size: 0.82rem; color: #888; margin: -4px 0 14px; line-height: 1.45; }
@@ -586,6 +618,67 @@
       line-height: 1.4;
     }
     .toast.show { opacity: 1; }
+    .hello {
+      text-align: center;
+      color: #1976d2;
+      font-size: 1rem;
+      font-weight: 700;
+      margin: -6px 0 16px;
+      perspective: 800px;
+    }
+    .hello-spin, #hello-text {
+      display: inline-block;
+      transform-style: preserve-3d;
+    }
+    .hello-spin { animation: hello-spin 2.1s linear 1 forwards; }
+    #hello-text { animation: hello-breathe 2.4s ease-in-out 5s 1 both; }
+    @keyframes hello-spin {
+      from { transform: rotate(0deg) rotateY(0deg); }
+      to { transform: rotate(720deg) rotateY(360deg); }
+    }
+    @keyframes hello-breathe {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.2); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .hello-spin, #hello-text { animation: none; }
+    }
+    #confetti {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 80;
+      overflow: hidden;
+    }
+    #confetti i {
+      position: absolute;
+      bottom: 0;
+      width: 8px;
+      height: 12px;
+      border-radius: 2px;
+      display: block;
+      animation-name: confetti-pop;
+      animation-fill-mode: forwards;
+    }
+    #confetti i.dot { width: 8px; height: 8px; border-radius: 50%; }
+    @keyframes confetti-pop {
+      0% {
+        transform: translate3d(0, 16px, 0) rotate(0deg);
+        opacity: 1;
+        animation-timing-function: cubic-bezier(0.12, 0.85, 0.2, 1);
+      }
+      42% {
+        transform: translate3d(var(--dx), var(--peak), 0) rotate(200deg);
+        opacity: 1;
+        animation-timing-function: cubic-bezier(0.35, 0, 0.75, 0.4);
+      }
+      82% { opacity: 1; }
+      100% {
+        transform: translate3d(calc(var(--dx) * 0.35), 22vh, 0) rotate(540deg);
+        opacity: 0;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) { #confetti { display: none; } }
 
     /* ---------- Dark mode (gamey, high-contrast) ---------- */
     body.dark {
@@ -594,6 +687,7 @@
     }
     body.dark h1 { color: #f3f3fb; }
     body.dark .subtitle { color: #9a9cc8; }
+    body.dark .hello { color: #8ab0ff; }
     body.dark .card {
       background: #20224a;
       border: 1px solid #2f3266;
@@ -623,6 +717,9 @@
     body.dark .btn-join { background: #4d7cff; box-shadow: 0 2px 12px rgba(77,124,255,0.4); }
     body.dark .btn-join:active { background: #3f6ae0; }
     body.dark .signup-hint, body.dark .notify-hint { color: #7e80b0; }
+    body.dark .someone-else { color: #8ab0ff; }
+    body.dark .suggest-x { background: #2a2c57; color: #b9bbe6; }
+    body.dark .suggest-x:active { background: #383b6e; color: #ececf7; }
     body.dark .field-hint { color: #8688b8; }
     body.dark .field-hint strong { color: #a6a8d4; }
     body.dark .card-intro { color: #8688b8; }
@@ -756,6 +853,7 @@
   <button class="hdr-btn" id="add-roster-btn" onclick="openAddChooser()" aria-label="Add a roster" title="Add a roster" style="display:none;">+</button>
 </div>
 <p class="subtitle">Type a name, tap "I'm in."</p>
+<p class="hello" id="hello-line" style="display:none;"><span class="hello-spin"><span id="hello-text"></span></span></p>
 
 <div id="home-bar" style="display:none;"><button class="home-btn" onclick="goHome()">&#8592; My Rosters</button></div>
 
@@ -1144,6 +1242,42 @@ function toast(msg, ms = 2500) {
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), ms);
 }
+function paintHello() {
+  const el = document.getElementById('hello-line');
+  if (!el) return;
+  const text = document.getElementById('hello-text');
+  if (!savedNameList().length) {
+    el.style.display = 'none';
+    if (text) text.textContent = '';
+    return;
+  }
+  if (text) text.textContent = 'Welcome back!';
+  el.style.display = 'block';
+}
+function celebrate(big) {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const prev = document.getElementById('confetti');
+  if (prev) prev.remove();
+  const layer = document.createElement('div');
+  layer.id = 'confetti';
+  layer.setAttribute('aria-hidden', 'true');
+  const colors = ['#1976d2', '#42a5f5', '#2e7d32', '#66bb6a', '#f9a825', '#ef6c00', '#ec407a'];
+  const count = big ? 70 : 36;
+  for (let i = 0; i < count; i++) {
+    const bit = document.createElement('i');
+    if (i % 3 === 0) bit.className = 'dot';
+    const rise = (big ? 52 : 38) + Math.random() * (big ? 34 : 28);
+    bit.style.left = (Math.random() * 100) + '%';
+    bit.style.background = colors[i % colors.length];
+    bit.style.setProperty('--peak', '-' + rise.toFixed(0) + 'vh');
+    bit.style.setProperty('--dx', (Math.random() * 80 - 40).toFixed(0) + 'px');
+    bit.style.animationDuration = ((big ? 2.15 : 1.85) + Math.random() * 0.35) + 's';
+    bit.style.animationDelay = (Math.random() * 0.12) + 's';
+    layer.appendChild(bit);
+  }
+  document.body.appendChild(layer);
+  setTimeout(() => { if (layer.parentNode) layer.remove(); }, big ? 2800 : 2500);
+}
 
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
@@ -1191,15 +1325,73 @@ function escAttrHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// Remember the names this device signed up, so a player can spot their own row
+// Names this phone has signed up, oldest first. The signup row only uses the last
+// three. Older keys stay in storage until the next successful signup, which keeps
+// the three most recent and drops the rest. Game signups are a different store.
+function storedNameKeys() {
+  try {
+    const a = JSON.parse(localStorage.getItem('egr_my_names') || '[]');
+    if (!Array.isArray(a)) return [];
+    const lastAt = new Map();
+    a.forEach((k, i) => {
+      const key = String(k).trim().toLowerCase();
+      if (key) lastAt.set(key, i);
+    });
+    return [...lastAt.entries()].sort((x, y) => x[1] - y[1]).map(pair => pair[0]);
+  } catch (e) { return []; }
+}
+function recentNameKeys() {
+  return storedNameKeys().slice(-3);
+}
 function myNames() {
-  try { return new Set(JSON.parse(localStorage.getItem('egr_my_names') || '[]')); }
-  catch (e) { return new Set(); }
+  return new Set(recentNameKeys());
+}
+function myLabels() {
+  try {
+    const o = JSON.parse(localStorage.getItem('egr_my_labels') || '{}');
+    return o && typeof o === 'object' && !Array.isArray(o) ? o : {};
+  } catch (e) { return {}; }
+}
+function titleCaseName(key) {
+  return String(key).replace(/(^|[\s'-])(\S)/g, (m, a, b) => a + b.toUpperCase());
+}
+function nameLabel(key) {
+  const labels = myLabels();
+  return labels[key] || titleCaseName(key);
+}
+function savedNameList() {
+  return recentNameKeys().map(key => ({ key, label: nameLabel(key) }));
+}
+function dismissName(key) {
+  const k = String(key || '').trim().toLowerCase();
+  if (!k) return;
+  const label = nameLabel(k);
+  const kept = recentNameKeys().filter(name => name !== k);
+  try {
+    localStorage.setItem('egr_my_names', JSON.stringify(kept));
+    const labels = myLabels();
+    Object.keys(labels).forEach(labelKey => { if (kept.indexOf(labelKey) === -1) delete labels[labelKey]; });
+    localStorage.setItem('egr_my_labels', JSON.stringify(labels));
+  } catch (e) {}
+  myNameSet = myNames();
+  toast(label + ' won’t be suggested');
+  refreshCurrentView();
 }
 function rememberMyName(name) {
-  const s = myNames();
-  s.add(name.trim().toLowerCase());
-  try { localStorage.setItem('egr_my_names', JSON.stringify([...s])); } catch (e) {}
+  const display = String(name || '').trim();
+  const key = display.toLowerCase();
+  if (!key) return;
+  try {
+    const list = storedNameKeys().filter(k => k !== key);
+    list.push(key);
+    const kept = list.slice(-3);
+    localStorage.setItem('egr_my_names', JSON.stringify(kept));
+    const labels = myLabels();
+    labels[key] = display;
+    Object.keys(labels).forEach(k => { if (kept.indexOf(k) === -1) delete labels[k]; });
+    localStorage.setItem('egr_my_labels', JSON.stringify(labels));
+  } catch (e) {}
+  myNameSet = myNames();
 }
 let myNameSet = myNames();
 
@@ -1407,6 +1599,7 @@ function applyBranding(org) {
   const sub = document.querySelector('.subtitle');
   if (sub) sub.textContent = org.subtitle || '';
   applyTerms(org);
+  paintHello();
 }
 function cacheBranding(org, routeToken) {
   try {
@@ -1607,6 +1800,7 @@ function renderWelcome() {
   const notify = document.getElementById('notify-bar'); if (notify) notify.style.display = 'none';
   const arch = document.getElementById('archive-section'); if (arch) arch.style.display = 'none';
   document.querySelectorAll('.log-section, .admin-toggle').forEach(el => { el.style.display = 'none'; });
+  paintHello();
   document.getElementById('games-container').innerHTML = `<div class="card">
     <h2 style="margin:0 0 8px;font-size:1.15rem;">Game Roster</h2>
     <p style="color:#555;font-size:0.92rem;line-height:1.45;margin:0 0 12px;">This app is for invited groups.</p>
@@ -1664,15 +1858,7 @@ function gameCardHtml(game, org, admin) {
     html += `</div>`;
   }
 
-  if (!isDraft) {
-    html += `<div class="signup-area">
-          <div class="signup-row">
-            <input type="text" id="name-${game.id}" placeholder="Name" maxlength="30" onkeydown="if(event.key==='Enter')signup('${game.id}')">
-            <button class="btn-join" onclick="signup('${game.id}')">I'm in</button>
-          </div>
-          <div class="signup-hint">Enter the name of the person you want to sign up</div>
-        </div>`;
-  }
+  if (!isDraft) html += signupAreaHtml(game);
 
   if (admin) {
     html += `<div class="game-admin-actions">`;
@@ -1818,6 +2004,80 @@ async function unarchiveGame(gameId) {
   } catch (e) { toast('Error unarchiving ' + T(ORG).oneL); }
 }
 
+function statusLine(where, n, w) {
+  if (where === 'in') return "You're in · #" + n;
+  if (w === 0) return "Waitlist · you're next";
+  return 'Waitlist · ' + w + ' ahead of you';
+}
+
+function classicSignupRow(gameId, hidden) {
+  const hide = hidden ? ' style="display:none;"' : '';
+  return `<div class="signup-row" id="extra-${gameId}"${hide}>
+        <input type="text" id="name-${gameId}" placeholder="Name" maxlength="30" onkeydown="if(event.key==='Enter')signup('${gameId}')">
+        <button class="btn-join" onclick="signup('${gameId}')">I'm in</button>
+      </div>
+      <div class="signup-hint" id="hint-${gameId}"${hide}>Enter the name of the person you want to sign up</div>`;
+}
+
+function showSomeoneElse(gameId) {
+  const row = document.getElementById('extra-' + gameId);
+  const hint = document.getElementById('hint-' + gameId);
+  if (row) row.style.display = 'flex';
+  if (hint) hint.style.display = 'block';
+  const input = document.getElementById('name-' + gameId);
+  if (input) input.focus();
+}
+
+function suggestRow(gameId, saved) {
+  const labelAttr = esc(saved.label);
+  return `<div class="suggest-row">
+        <button class="btn-join suggest-join" onclick="signup('${gameId}','${escAttr(saved.label)}',this)">${esc(saved.label)} · I'm in</button>
+        <button type="button" class="suggest-x" aria-label="Don't suggest ${labelAttr}" onclick="event.stopPropagation();dismissName('${escAttr(saved.key)}')">&times;</button>
+      </div>`;
+}
+
+// The last three names on this phone, against this game only. Each one still to
+// add is a one-tap "I'm in". The × forgets that shortcut on this phone.
+function signupAreaHtml(game) {
+  const players = (game.signups || []).slice().sort(byCreated);
+  const roster = players.slice(0, game.max_players);
+  const waitlist = players.slice(game.max_players);
+  const onGame = new Map();
+  const keyOf = (n) => (n || '').trim().toLowerCase();
+  roster.forEach((p, i) => onGame.set(keyOf(p.player_name), { where: 'in', n: i + 1, display: p.player_name }));
+  waitlist.forEach((p, i) => onGame.set(keyOf(p.player_name), { where: 'wait', w: i, display: p.player_name }));
+
+  const saved = savedNameList();
+  const gid = game.id;
+  if (!saved.length) {
+    return `<div class="signup-area">${classicSignupRow(gid, false)}</div>`;
+  }
+
+  const multi = saved.length > 1;
+  const toAdd = [];
+  let html = '<div class="signup-area">';
+  saved.forEach(s => {
+    const hit = onGame.get(s.key);
+    if (!hit) { toAdd.push(s); return; }
+    const who = hit.display || s.label;
+    const line = (multi ? who + ' · ' : '') + statusLine(hit.where, hit.n, hit.w);
+    html += `<div class="signup-status">
+          <span class="signup-status-text">${esc(line)}</span>
+          <button class="btn-danger btn-small" onclick="removePlayer('${gid}','${escAttr(who)}')">I'm out</button>
+        </div>`;
+  });
+
+  if (toAdd.length) {
+    html += '<div class="signup-hint">One tap joins. The × hides a name from these shortcuts.</div>';
+    toAdd.forEach(s => { html += suggestRow(gid, s); });
+  }
+
+  html += `<button type="button" class="someone-else" onclick="showSomeoneElse('${gid}')">Someone else</button>`;
+  html += classicSignupRow(gid, true);
+  html += '</div>';
+  return html;
+}
+
 function playerRow(num, player, gameId) {
   const safeName = escAttr(player.player_name);
   const isMe = myNameSet.has((player.player_name || '').toLowerCase());
@@ -1828,11 +2088,12 @@ function playerRow(num, player, gameId) {
   </div>`;
 }
 
-async function signup(gameId) {
-  const input = document.getElementById(`name-${gameId}`);
-  const name = input.value.trim();
-  if (!name) { input.focus(); return; }
-  const btn = input.closest('.signup-row') && input.closest('.signup-row').querySelector('.btn-join');
+async function signup(gameId, presetName, btnEl) {
+  const input = document.getElementById('name-' + gameId);
+  const preset = presetName != null && String(presetName).trim() !== '';
+  const name = preset ? String(presetName).trim() : ((input && input.value) || '').trim();
+  if (!name) { if (input) input.focus(); return; }
+  const btn = btnEl || (input && input.closest('.signup-row') && input.closest('.signup-row').querySelector('.btn-join'));
   if (btn) btn.disabled = true;
 
   const gOrg = gameOrg[gameId] || ORG || {};
@@ -1852,10 +2113,17 @@ async function signup(gameId) {
       }
       return;
     }
+    const before = gamesData[gameId];
+    const spotsBefore = before && before.game ? Math.max(0, before.game.max_players - before.roster.length) : null;
     rememberMyName(name);
-    input.value = '';
+    if (input && !preset) input.value = '';
     await refreshCurrentView();
-    toast(signupMessage(gameId, name));
+    const after = gamesData[gameId];
+    const key = name.toLowerCase();
+    const onRoster = after && after.roster.some(p => (p.player_name || '').trim().toLowerCase() === key);
+    const tookLast = !!(onRoster && spotsBefore === 1);
+    celebrate(tookLast);
+    toast(tookLast ? 'You took the last spot' : signupMessage(gameId, name));
   } catch (e) {
     const m = String((e && e.message) || '');
     if (m.includes('access_required')) toast('This roster needs the group code. Open the link from your group chat.');
@@ -1893,13 +2161,19 @@ function askRemove(playerName, needName) {
 async function removePlayer(gameId, playerName) {
   let actorName;
 
+  const mine = myNames().has((playerName || '').trim().toLowerCase());
   if (adminPass) {
     // Admin removing — we know who they are; just confirm
     const r = await askRemove(playerName, false);
     if (!r) return;
     actorName = adminName;
+  } else if (mine) {
+    // This phone's own name. Confirm, and do not ask for the name again.
+    const r = await askRemove(playerName, false);
+    if (!r) return;
+    actorName = playerName;
   } else {
-    // Non-admin: confirm + capture who is removing (for the activity log)
+    // Someone else: confirm + capture who is removing (for the activity log)
     const r = await askRemove(playerName, true);
     if (!r) return;
     actorName = r.name;
@@ -2647,6 +2921,7 @@ async function bootCombined() {
   document.title = 'My Rosters';
   const h1 = document.querySelector('.app-header h1'); if (h1) h1.textContent = 'My Rosters';
   const sub = document.querySelector('.subtitle'); if (sub) sub.textContent = 'All your rosters in one place';
+  paintHello();
   const addBtn = document.getElementById('add-roster-btn'); if (addBtn) addBtn.style.display = 'flex';
   // hub is player-only — hide the single-view chrome (and the home bar; this IS home)
   document.querySelectorAll('.log-section, .admin-toggle').forEach(el => { el.style.display = 'none'; });
